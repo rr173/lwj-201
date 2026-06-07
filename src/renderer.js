@@ -326,9 +326,10 @@ export class PivotRenderer {
       if (row.isGrandTotal) cellClass += ' grand-total';
       else if (row.isSubtotal) cellClass += ' subtotal';
       
+      const colKey = col.colKeyObj.key || '__total__';
       const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
         ? { styles: [], dataBarWidth: 0 }
-        : this.applyConditionalFormat(value, col.valueIndex);
+        : this.applyConditionalFormat(value, col.valueIndex, colKey);
       
       const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
       
@@ -451,6 +452,7 @@ export class PivotRenderer {
     
     values.forEach((_, valueIndex) => {
       const allValues = [];
+      const byColValues = {};
       
       this.allRows.forEach(row => {
         if (row.isSubtotal || row.isGrandTotal) return;
@@ -461,21 +463,40 @@ export class PivotRenderer {
           const value = this.getCellValue(row, col.colKeyObj, valueIndex);
           if (typeof value === 'number' && !isNaN(value)) {
             allValues.push(value);
+            
+            const colKey = col.colKeyObj.key || '__total__';
+            if (!byColValues[colKey]) {
+              byColValues[colKey] = [];
+            }
+            byColValues[colKey].push(value);
           }
         });
       });
       
       if (allValues.length > 0) {
+        const byColStats = {};
+        Object.keys(byColValues).forEach(colKey => {
+          const vals = byColValues[colKey];
+          if (vals.length > 0) {
+            byColStats[colKey] = {
+              min: Math.min(...vals),
+              max: Math.max(...vals)
+            };
+          }
+        });
+        
         this.valueStats[valueIndex] = {
-          min: Math.min(...allValues),
-          max: Math.max(...allValues),
-          allValues
+          global: {
+            min: Math.min(...allValues),
+            max: Math.max(...allValues)
+          },
+          byColumn: byColStats
         };
       }
     });
   }
 
-  applyConditionalFormat(value, valueIndex) {
+  applyConditionalFormat(value, valueIndex, colKey) {
     const styles = [];
     const rules = this.config.conditionalFormats?.[valueIndex] || [];
     
@@ -484,6 +505,7 @@ export class PivotRenderer {
     }
     
     let dataBarWidth = 0;
+    const valueStats = this.valueStats[valueIndex];
     
     rules.forEach(rule => {
       if (rule.type === 'threshold') {
@@ -499,17 +521,37 @@ export class PivotRenderer {
           styles.push(`background-color: ${rule.color}`);
         }
       } else if (rule.type === 'dataBar') {
-        const stats = this.valueStats[valueIndex];
-        if (stats && stats.max !== stats.min) {
-          const ratio = (value - stats.min) / (stats.max - stats.min);
-          dataBarWidth = Math.max(0, Math.min(1, ratio)) * 100;
+        if (valueStats) {
+          const scope = rule.scope || 'column';
+          let stats;
+          
+          if (scope === 'global') {
+            stats = valueStats.global;
+          } else {
+            stats = valueStats.byColumn[colKey] || valueStats.global;
+          }
+          
+          if (stats && stats.max !== stats.min) {
+            const ratio = (value - stats.min) / (stats.max - stats.min);
+            dataBarWidth = Math.max(0, Math.min(1, ratio)) * 100;
+          }
         }
       } else if (rule.type === 'colorScale') {
-        const stats = this.valueStats[valueIndex];
-        if (stats && stats.max !== stats.min) {
-          const ratio = (value - stats.min) / (stats.max - stats.min);
-          const color = this.interpolateColor(rule.minColor, rule.maxColor, ratio);
-          styles.push(`background-color: ${color}`);
+        if (valueStats) {
+          const scope = rule.scope || 'column';
+          let stats;
+          
+          if (scope === 'global') {
+            stats = valueStats.global;
+          } else {
+            stats = valueStats.byColumn[colKey] || valueStats.global;
+          }
+          
+          if (stats && stats.max !== stats.min) {
+            const ratio = (value - stats.min) / (stats.max - stats.min);
+            const color = this.interpolateColor(rule.minColor, rule.maxColor, ratio);
+            styles.push(`background-color: ${color}`);
+          }
         }
       }
     });

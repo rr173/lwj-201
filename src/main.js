@@ -273,6 +273,7 @@ class PivotApp {
     
     if (sourceZone === 'values') {
       this.config.values.splice(index, 1);
+      this.rebuildConditionalFormats(index);
     } else if (sourceZone === 'filter') {
       this.config.filters.splice(index, 1);
     } else {
@@ -282,6 +283,22 @@ class PivotApp {
     
     this.renderZones();
     this.renderPivot();
+  }
+  
+  rebuildConditionalFormats(removedIndex) {
+    const newCF = {};
+    const oldCF = this.config.conditionalFormats;
+    
+    Object.keys(oldCF).forEach(oldIdxStr => {
+      const oldIdx = parseInt(oldIdxStr);
+      if (oldIdx < removedIndex) {
+        newCF[oldIdx] = oldCF[oldIdx];
+      } else if (oldIdx > removedIndex) {
+        newCF[oldIdx - 1] = oldCF[oldIdx];
+      }
+    });
+    
+    this.config.conditionalFormats = newCF;
   }
   
   renderPivot() {
@@ -338,13 +355,21 @@ class PivotApp {
     const renderDataBarPanel = () => {
       const dataBarRule = rules.find(r => r.type === 'dataBar');
       const color = dataBarRule?.color || '#667eea';
+      const scope = dataBarRule?.scope || 'column';
       return `
         <div class="cf-panel">
           <div class="cf-form-row">
             <label>数据条颜色:</label>
             <input type="color" id="dataBarColor" value="${color}">
           </div>
-          <div class="cf-hint">数据条将根据该列数值的最小值到最大值按比例显示</div>
+          <div class="cf-form-row">
+            <label>计算范围:</label>
+            <select id="dataBarScope">
+              <option value="column" ${scope === 'column' ? 'selected' : ''}>按列单独计算</option>
+              <option value="global" ${scope === 'global' ? 'selected' : ''}>全局统一计算</option>
+            </select>
+          </div>
+          <div class="cf-hint">按列计算：每列单独计算最小/最大值，适合列内比较；全局计算：所有列共用最小/最大值，适合跨列比较</div>
         </div>
       `;
     };
@@ -353,6 +378,7 @@ class PivotApp {
       const colorScaleRule = rules.find(r => r.type === 'colorScale');
       const minColor = colorScaleRule?.minColor || '#f8696b';
       const maxColor = colorScaleRule?.maxColor || '#63be7b';
+      const scope = colorScaleRule?.scope || 'column';
       return `
         <div class="cf-panel">
           <div class="cf-form-row">
@@ -363,7 +389,14 @@ class PivotApp {
             <label>最大值颜色:</label>
             <input type="color" id="colorScaleMax" value="${maxColor}">
           </div>
-          <div class="cf-hint">色阶将按该列数值从最小值到最大值进行渐变色映射</div>
+          <div class="cf-form-row">
+            <label>计算范围:</label>
+            <select id="colorScaleScope">
+              <option value="column" ${scope === 'column' ? 'selected' : ''}>按列单独计算</option>
+              <option value="global" ${scope === 'global' ? 'selected' : ''}>全局统一计算</option>
+            </select>
+          </div>
+          <div class="cf-hint">按列计算：每列单独计算最小/最大值，适合列内比较；全局计算：所有列共用最小/最大值，适合跨列比较</div>
         </div>
       `;
     };
@@ -410,17 +443,21 @@ class PivotApp {
         });
       } else if (type === 'dataBar') {
         const color = document.getElementById('dataBarColor').value;
+        const scope = document.getElementById('dataBarScope').value;
         newRules.push({
           type: 'dataBar',
-          color
+          color,
+          scope
         });
       } else if (type === 'colorScale') {
         const minColor = document.getElementById('colorScaleMin').value;
         const maxColor = document.getElementById('colorScaleMax').value;
+        const scope = document.getElementById('colorScaleScope').value;
         newRules.push({
           type: 'colorScale',
           minColor,
-          maxColor
+          maxColor,
+          scope
         });
       }
       
