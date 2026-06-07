@@ -25,6 +25,8 @@ export class PivotRenderer {
     this.allRows = [];
     this.scrollHandlerAttached = false;
     this.valueStats = {};
+    this.sortColumnKey = null;
+    this.sortDirection = null;
   }
   
   updateConfig(config) {
@@ -51,6 +53,49 @@ export class PivotRenderer {
       this.collapsedNodes.delete(key);
     }
     this.render();
+  }
+
+  toggleSort(columnKey) {
+    if (this.sortColumnKey !== columnKey) {
+      this.sortColumnKey = columnKey;
+      this.sortDirection = 'asc';
+    } else {
+      if (this.sortDirection === 'asc') {
+        this.sortDirection = 'desc';
+      } else if (this.sortDirection === 'desc') {
+        this.sortColumnKey = null;
+        this.sortDirection = null;
+      } else {
+        this.sortDirection = 'asc';
+      }
+    }
+    this.render();
+  }
+
+  getSortArrow(columnKey) {
+    if (this.sortColumnKey !== columnKey) {
+      return '<span class="sort-arrow sort-none"></span>';
+    }
+    if (this.sortDirection === 'asc') {
+      return '<span class="sort-arrow sort-asc">▲</span>';
+    }
+    if (this.sortDirection === 'desc') {
+      return '<span class="sort-arrow sort-desc">▼</span>';
+    }
+    return '<span class="sort-arrow sort-none"></span>';
+  }
+
+  getSortValue(node, colKeyObj, valueIndex) {
+    if (!this.aggregateResult) return 0;
+    
+    const rowValues = node.values || [];
+    const colValues = colKeyObj && !colKeyObj.isTotal && colKeyObj.key !== '__total__' 
+      ? (colKeyObj.values || []) 
+      : [];
+    
+    const value = getAggCellValue(this.aggregateResult, rowValues, colValues, valueIndex);
+    if (typeof value === 'number' && !isNaN(value)) return value;
+    return 0;
   }
 
   buildVisibleRows() {
@@ -97,7 +142,22 @@ export class PivotRenderer {
     };
     
     if (rows.length > 0) {
-      const hierarchy = buildRowHierarchy(result.rowKeys, rows);
+      let sortFn = null;
+      
+      if (this.sortColumnKey && this.sortDirection) {
+        const allColCombos = this.buildDataColumns();
+        const sortCol = allColCombos.find(c => `${c.colKeyObj.key}__${c.valueIndex}` === this.sortColumnKey);
+        
+        if (sortCol) {
+          sortFn = (a, b) => {
+            const valA = this.getSortValue(a, sortCol.colKeyObj, sortCol.valueIndex);
+            const valB = this.getSortValue(b, sortCol.colKeyObj, sortCol.valueIndex);
+            return this.sortDirection === 'asc' ? valA - valB : valB - valA;
+          };
+        }
+      }
+      
+      const hierarchy = buildRowHierarchy(result.rowKeys, rows, sortFn);
       hierarchy.forEach(node => {
         addRow(node, 0);
       });
@@ -140,12 +200,13 @@ export class PivotRenderer {
     if (columns.length === 0) {
       const row = [];
       values.forEach((v, vIdx) => {
+        const colKeyObj = { key: '__total__' };
         row.push({
           label: v.label || `${aggregationTypes[v.aggregation].label}(${v.field})`,
           colSpan: 1,
-          key: `val_${vIdx}`,
+          key: `${colKeyObj.key}__${vIdx}`,
           valueIndex: vIdx,
-          colKeyObj: { key: '__total__' }
+          colKeyObj
         });
       });
       headers.push(row);
@@ -271,7 +332,12 @@ export class PivotRenderer {
       }
       
       headerRow.forEach(header => {
-        html += `<th colspan="${header.colSpan}">${header.label}</th>`;
+        if (levelIdx === columnHeaders.length - 1 && header.key) {
+          const sortClass = this.sortColumnKey === header.key ? ' sorted' : '';
+          html += `<th colspan="${header.colSpan}" class="sortable-header${sortClass}" data-sort-key="${header.key}">${header.label}${this.getSortArrow(header.key)}</th>`;
+        } else {
+          html += `<th colspan="${header.colSpan}">${header.label}</th>`;
+        }
       });
       
       html += '</tr>';
@@ -621,7 +687,12 @@ export class PivotRenderer {
         html += `<th class="row-header corner" colspan="${numRowHeaderCols}"></th>`;
       }
       headerRow.forEach(header => {
-        html += `<th colspan="${header.colSpan}">${header.label}</th>`;
+        if (levelIdx === columnHeaders.length - 1 && header.key) {
+          const sortClass = this.sortColumnKey === header.key ? ' sorted' : '';
+          html += `<th colspan="${header.colSpan}" class="sortable-header${sortClass}" data-sort-key="${header.key}">${header.label}${this.getSortArrow(header.key)}</th>`;
+        } else {
+          html += `<th colspan="${header.colSpan}">${header.label}</th>`;
+        }
       });
       html += '</tr>';
     });
@@ -662,6 +733,14 @@ export class PivotRenderer {
           this.onRowToggle(key, this.isExpanded(key));
         }
       };
+    });
+    
+    this.container.querySelectorAll('.sortable-header[data-sort-key]').forEach(header => {
+      header.onclick = () => {
+        const sortKey = header.dataset.sortKey;
+        this.toggleSort(sortKey);
+      };
+      header.style.cursor = 'pointer';
     });
     
     this.container.querySelectorAll('.data-cell').forEach(cell => {

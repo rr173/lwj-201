@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多维数据透视表引擎</title>
+  <script type="module" crossorigin src="/assets/index-BlE2XV0n.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Cvc-QQEt.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <h1>多维数据透视表引擎</h1>
+      <div class="stats">
+        <span id="recordCount">数据加载中...</span>
+      </div>
+    </header>
+    
+    <div class="main-container">
+      <aside class="field-panel">
+        <h3>可用字段</h3>
+        <div id="fieldList" class="field-list"></div>
+      </aside>
+      
+      <div class="workspace">
+        <div class="drop-zones">
+          <div class="drop-zone" id="filterZone">
+            <div class="zone-title">筛选区域</div>
+            <div class="zone-content" data-zone="filter"></div>
+          </div>
+          
+          <div class="drop-zone" id="columnsZone">
+            <div class="zone-title">列维度</div>
+            <div class="zone-content" data-zone="columns"></div>
+          </div>
+          
+          <div class="drop-zone" id="rowsZone">
+            <div class="zone-title">行维度</div>
+            <div class="zone-content" data-zone="rows"></div>
+          </div>
+          
+          <div class="drop-zone" id="valuesZone">
+            <div class="zone-title">值区域</div>
+            <div class="zone-content" data-zone="values"></div>
+          </div>
+        </div>
+        
+        <div class="pivot-container">
+          <div id="pivotTable" class="pivot-table"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle"></h3>
+          <button class="close-btn" id="closeModal">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+      </div>
+    </div>
+  </div>
+  
+</body>
+</html>

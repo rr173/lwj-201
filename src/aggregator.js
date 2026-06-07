@@ -127,7 +127,7 @@ export function getDetailRecords(data, config, rowKey, colKey) {
   });
 }
 
-export function buildRowHierarchy(rowKeys, rows) {
+export function buildRowHierarchy(rowKeys, rows, sortFn = null) {
   if (!rows || rows.length === 0) {
     return [{ level: 0, key: '__total__', label: '总计', values: [], isTotal: true, children: [], expanded: true }];
   }
@@ -163,6 +163,18 @@ export function buildRowHierarchy(rowKeys, rows) {
       parentKey = key;
     }
   });
+  
+  if (sortFn) {
+    const sortRecursive = (nodes) => {
+      nodes.sort(sortFn);
+      nodes.forEach(node => {
+        if (node.children && node.children.length > 0) {
+          sortRecursive(node.children);
+        }
+      });
+    };
+    sortRecursive(root);
+  }
   
   return root;
 }

@@ -277,6 +277,42 @@ body {
   z-index: 10;
 }
 
+.pivot-table th.sortable-header {
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.pivot-table th.sortable-header:hover {
+  background: #e8f0ff;
+}
+
+.pivot-table th.sortable-header.sorted {
+  background: #e0e7ff;
+}
+
+.sort-arrow {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+  opacity: 0.4;
+}
+
+.sort-arrow.sort-asc,
+.sort-arrow.sort-desc {
+  opacity: 1;
+  color: #667eea;
+}
+
+.sort-arrow.sort-none {
+  opacity: 0.2;
+}
+
+.pivot-table th.sortable-header:hover .sort-arrow.sort-none {
+  opacity: 0.5;
+}
+
 .pivot-table th.row-header {
   background: #f0f5ff;
   position: sticky;
