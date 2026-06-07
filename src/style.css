@@ -269,8 +269,16 @@ body {
   background: #f0f3ff;
 }
 
-.pivot-table td.data-cell.highlighted {
-  background: #d6e4ff;
+.pivot-table .highlighted {
+  background: #d6e4ff !important;
+}
+
+.pivot-table th.highlighted {
+  background: #c6d8ff !important;
+}
+
+.pivot-table td.row-header.highlighted {
+  background: #c6d8ff !important;
 }
 
 .pivot-table td.subtotal {

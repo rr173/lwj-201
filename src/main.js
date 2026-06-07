@@ -475,5 +475,5 @@ class PivotApp {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  new PivotApp();
+  window.pivotApp = new PivotApp();
 });

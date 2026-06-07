@@ -1,4 +1,4 @@
-import { aggregateData, buildRowHierarchy, aggregationTypes } from './aggregator.js';
+import { aggregateData, buildRowHierarchy, aggregationTypes, getCellValue as getAggCellValue } from './aggregator.js';
 
 const ROW_HEIGHT = 36;
 const HEADER_ROW_HEIGHT = 36;
@@ -390,16 +390,18 @@ export class PivotRenderer {
   getCellValue(row, colKeyObj, valueIndex) {
     if (!this.aggregateResult) return '';
     
-    let lookupRowKey = row.isGrandTotal ? '__total__' : row.key;
-    if (row.isSubtotal) {
-      lookupRowKey = row.key.replace('__subtotal', '');
+    let rowValues = [];
+    if (!row.isGrandTotal) {
+      const cleanKey = row.isSubtotal ? row.key.replace('__subtotal', '') : row.key;
+      rowValues = cleanKey.split('||').filter(v => v);
     }
     
-    const colKey = colKeyObj.key || colKeyObj;
-    const cellKey = `${lookupRowKey}||${colKey}`;
-    const values = this.aggregateResult.data[cellKey];
+    let colValues = [];
+    if (colKeyObj && !colKeyObj.isTotal && colKeyObj.key !== '__total__') {
+      colValues = colKeyObj.values || [];
+    }
     
-    return values ? values[valueIndex] : '';
+    return getAggCellValue(this.aggregateResult, rowValues, colValues, valueIndex);
   }
 
   formatValue(value, field) {
@@ -516,11 +518,28 @@ export class PivotRenderer {
   }
 
   highlightCell(cell) {
-    this.container.querySelectorAll('.data-cell.highlighted').forEach(c => {
+    this.container.querySelectorAll('.highlighted').forEach(c => {
       c.classList.remove('highlighted');
     });
     
     cell.classList.add('highlighted');
     this.highlightedCell = cell;
+    
+    const row = cell.closest('tr');
+    if (row) {
+      row.querySelectorAll('.row-header').forEach(header => {
+        header.classList.add('highlighted');
+      });
+    }
+    
+    const cellIndex = Array.from(cell.parentNode.children).indexOf(cell);
+    if (cellIndex >= 0) {
+      this.container.querySelectorAll('thead tr').forEach(headerRow => {
+        const headers = headerRow.querySelectorAll('th');
+        if (headers[cellIndex]) {
+          headers[cellIndex].classList.add('highlighted');
+        }
+      });
+    }
   }
 }
