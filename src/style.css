@@ -205,6 +205,37 @@ body {
   opacity: 1;
 }
 
+.zone-field .cf-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  border: 1px solid #d9d9d9;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.zone-field .cf-btn:hover {
+  opacity: 1;
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.zone-field .cf-btn.has-cf {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #52c41a;
+  opacity: 1;
+}
+
 .pivot-container {
   flex: 1;
   background: white;
@@ -494,4 +525,141 @@ body {
 
 .empty-state p {
   font-size: 14px;
+}
+
+.data-bar-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.data-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 60%;
+  border-radius: 2px;
+  opacity: 0.8;
+  min-width: 3px;
+}
+
+.data-bar-value {
+  position: relative;
+  z-index: 1;
+}
+
+.cf-header {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.cf-type-selector {
+  display: flex;
+  gap: 16px;
+}
+
+.cf-type-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.cf-type-label:hover {
+  border-color: #667eea;
+  background: #f0f3ff;
+}
+
+.cf-type-label input[type="radio"]:checked + span {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.cf-content {
+  min-height: 200px;
+}
+
+.cf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cf-form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cf-form-row label {
+  min-width: 100px;
+  font-weight: 500;
+}
+
+.cf-form-row input[type="color"] {
+  width: 40px;
+  height: 32px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.cf-hint {
+  color: #999;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.threshold-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.threshold-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.threshold-rule select,
+.threshold-rule input[type="number"] {
+  padding: 6px 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.threshold-rule input[type="number"] {
+  width: 100px;
+}
+
+.threshold-rule input[type="color"] {
+  width: 36px;
+  height: 30px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.add-rule-btn {
+  width: 100%;
+  justify-content: center;
+  border: 1px dashed #d9d9d9;
+  background: white;
 }

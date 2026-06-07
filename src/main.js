@@ -13,7 +13,8 @@ class PivotApp {
         { field: '销售额', aggregation: 'sum', label: '求和(销售额)' },
         { field: '数量', aggregation: 'sum', label: '求和(数量)' }
       ],
-      filters: []
+      filters: [],
+      conditionalFormats: {}
     };
     
     this.renderer = null;
@@ -198,7 +199,10 @@ class PivotApp {
       });
       
       el.addEventListener('click', (e) => {
-        if (!e.target.classList.contains('remove-btn')) {
+        if (e.target.classList.contains('cf-btn')) {
+          e.stopPropagation();
+          this.showConditionalFormatModal(index);
+        } else if (!e.target.classList.contains('remove-btn')) {
           this.showAggregationModal(index);
         }
       });
@@ -234,8 +238,14 @@ class PivotApp {
     el.className = `zone-field ${zoneType}`;
     el.draggable = true;
     
+    const hasCF = zoneType === 'values' && this.config.conditionalFormats[data.index] && 
+      this.config.conditionalFormats[data.index].length > 0;
+    const cfBtnClass = hasCF ? 'cf-btn has-cf' : 'cf-btn';
+    const cfBtn = zoneType === 'values' ? `<button class="${cfBtnClass}" title="条件格式">🎨</button>` : '';
+    
     el.innerHTML = `
       <span>${label}</span>
+      ${cfBtn}
       <button class="remove-btn" title="移除">&times;</button>
     `;
     
@@ -276,6 +286,196 @@ class PivotApp {
   
   renderPivot() {
     this.renderer.updateConfig(this.config);
+  }
+  
+  showConditionalFormatModal(valueIndex) {
+    const valueConfig = this.config.values[valueIndex];
+    const field = this.fields.find(f => f.key === valueConfig.field);
+    const rules = this.config.conditionalFormats[valueIndex] || [];
+    
+    let html = `
+      <div class="cf-header">
+        <div class="cf-type-selector">
+          <label class="cf-type-label">
+            <input type="radio" name="cfType" value="threshold" ${!rules.some(r => r.type === 'dataBar' || r.type === 'colorScale') ? 'checked' : ''}>
+            <span>阈值着色</span>
+          </label>
+          <label class="cf-type-label">
+            <input type="radio" name="cfType" value="dataBar" ${rules.some(r => r.type === 'dataBar') ? 'checked' : ''}>
+            <span>数据条</span>
+          </label>
+          <label class="cf-type-label">
+            <input type="radio" name="cfType" value="colorScale" ${rules.some(r => r.type === 'colorScale') ? 'checked' : ''}>
+            <span>色阶</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="cf-content" id="cfContent">
+      </div>
+      
+      <div class="filter-actions">
+        <button class="btn btn-primary" id="saveCF">确定</button>
+        <button class="btn btn-default" id="cancelCF">取消</button>
+      </div>
+    `;
+    
+    this.showModal(`条件格式 - ${field.label}`, html);
+    
+    const renderThresholdPanel = () => {
+      const thresholdRules = rules.filter(r => r.type === 'threshold');
+      let content = '<div class="threshold-rules">';
+      
+      thresholdRules.forEach((rule, idx) => {
+        content += this.renderThresholdRule(rule, idx);
+      });
+      
+      content += '</div>';
+      content += '<button class="btn btn-default add-rule-btn" id="addThresholdRule">+ 添加规则</button>';
+      return content;
+    };
+    
+    const renderDataBarPanel = () => {
+      const dataBarRule = rules.find(r => r.type === 'dataBar');
+      const color = dataBarRule?.color || '#667eea';
+      return `
+        <div class="cf-panel">
+          <div class="cf-form-row">
+            <label>数据条颜色:</label>
+            <input type="color" id="dataBarColor" value="${color}">
+          </div>
+          <div class="cf-hint">数据条将根据该列数值的最小值到最大值按比例显示</div>
+        </div>
+      `;
+    };
+    
+    const renderColorScalePanel = () => {
+      const colorScaleRule = rules.find(r => r.type === 'colorScale');
+      const minColor = colorScaleRule?.minColor || '#f8696b';
+      const maxColor = colorScaleRule?.maxColor || '#63be7b';
+      return `
+        <div class="cf-panel">
+          <div class="cf-form-row">
+            <label>最小值颜色:</label>
+            <input type="color" id="colorScaleMin" value="${minColor}">
+          </div>
+          <div class="cf-form-row">
+            <label>最大值颜色:</label>
+            <input type="color" id="colorScaleMax" value="${maxColor}">
+          </div>
+          <div class="cf-hint">色阶将按该列数值从最小值到最大值进行渐变色映射</div>
+        </div>
+      `;
+    };
+    
+    const updateCFContent = () => {
+      const type = document.querySelector('input[name="cfType"]:checked').value;
+      const contentEl = document.getElementById('cfContent');
+      
+      if (type === 'threshold') {
+        contentEl.innerHTML = renderThresholdPanel();
+        this.setupThresholdEvents();
+      } else if (type === 'dataBar') {
+        contentEl.innerHTML = renderDataBarPanel();
+      } else if (type === 'colorScale') {
+        contentEl.innerHTML = renderColorScalePanel();
+      }
+    };
+    
+    document.querySelectorAll('input[name="cfType"]').forEach(radio => {
+      radio.addEventListener('change', updateCFContent);
+    });
+    
+    updateCFContent();
+    
+    document.getElementById('saveCF').addEventListener('click', () => {
+      const type = document.querySelector('input[name="cfType"]:checked').value;
+      const newRules = [];
+      
+      if (type === 'threshold') {
+        const ruleEls = document.querySelectorAll('.threshold-rule');
+        ruleEls.forEach(ruleEl => {
+          const operator = ruleEl.querySelector('.threshold-operator').value;
+          const value = parseFloat(ruleEl.querySelector('.threshold-value').value);
+          const color = ruleEl.querySelector('.threshold-color').value;
+          
+          if (!isNaN(value)) {
+            newRules.push({
+              type: 'threshold',
+              operator,
+              value,
+              color
+            });
+          }
+        });
+      } else if (type === 'dataBar') {
+        const color = document.getElementById('dataBarColor').value;
+        newRules.push({
+          type: 'dataBar',
+          color
+        });
+      } else if (type === 'colorScale') {
+        const minColor = document.getElementById('colorScaleMin').value;
+        const maxColor = document.getElementById('colorScaleMax').value;
+        newRules.push({
+          type: 'colorScale',
+          minColor,
+          maxColor
+        });
+      }
+      
+      this.config.conditionalFormats[valueIndex] = newRules;
+      this.renderZones();
+      this.renderPivot();
+      this.hideModal();
+    });
+    
+    document.getElementById('cancelCF').addEventListener('click', () => {
+      this.hideModal();
+    });
+  }
+  
+  renderThresholdRule(rule, index) {
+    const operators = [
+      { value: 'gt', label: '大于' },
+      { value: 'gte', label: '大于等于' },
+      { value: 'lt', label: '小于' },
+      { value: 'lte', label: '小于等于' },
+      { value: 'eq', label: '等于' }
+    ];
+    
+    return `
+      <div class="threshold-rule" data-index="${index}">
+        <select class="threshold-operator">
+          ${operators.map(op => `<option value="${op.value}" ${rule.operator === op.value ? 'selected' : ''}>${op.label}</option>`).join('')}
+        </select>
+        <input type="number" class="threshold-value" value="${rule.value ?? ''}" placeholder="数值">
+        <input type="color" class="threshold-color" value="${rule.color || '#ffeb3b'}">
+        <button class="btn btn-default remove-threshold-btn" data-index="${index}">删除</button>
+      </div>
+    `;
+  }
+  
+  setupThresholdEvents() {
+    const addBtn = document.getElementById('addThresholdRule');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        const container = document.querySelector('.threshold-rules');
+        const newRule = { type: 'threshold', operator: 'gt', value: 0, color: '#ffeb3b' };
+        const ruleHtml = this.renderThresholdRule(newRule, container.children.length);
+        container.insertAdjacentHTML('beforeend', ruleHtml);
+        this.setupThresholdRuleEvents();
+      });
+    }
+    this.setupThresholdRuleEvents();
+  }
+  
+  setupThresholdRuleEvents() {
+    document.querySelectorAll('.remove-threshold-btn').forEach(btn => {
+      btn.onclick = () => {
+        btn.closest('.threshold-rule').remove();
+      };
+    });
   }
   
   setupModal() {

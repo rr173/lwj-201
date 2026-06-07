@@ -13,7 +13,8 @@ export class PivotRenderer {
       rows: [],
       columns: [],
       values: [],
-      filters: []
+      filters: [],
+      conditionalFormats: {}
     };
     this.collapsedNodes = new Set();
     this.highlightedCell = null;
@@ -23,8 +24,9 @@ export class PivotRenderer {
     this.visibleRows = [];
     this.allRows = [];
     this.scrollHandlerAttached = false;
+    this.valueStats = {};
   }
-
+  
   updateConfig(config) {
     this.config = { ...this.config, ...config };
     this.render();
@@ -221,6 +223,8 @@ export class PivotRenderer {
       return;
     }
     
+    this.computeValueStats();
+    
     const columnHeaders = this.buildColumnHeaders();
     const useVirtualScroll = this.allRows.length > VIRTUAL_THRESHOLD;
     
@@ -322,10 +326,29 @@ export class PivotRenderer {
       if (row.isGrandTotal) cellClass += ' grand-total';
       else if (row.isSubtotal) cellClass += ' subtotal';
       
+      const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
+        ? { styles: [], dataBarWidth: 0 }
+        : this.applyConditionalFormat(value, col.valueIndex);
+      
+      const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
+      
+      let cellContent = displayValue;
+      if (dataBarWidth > 0) {
+        const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
+        const barColor = dataBarRule?.color || '#667eea';
+        cellContent = `
+          <div class="data-bar-container">
+            <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
+            <span class="data-bar-value">${displayValue}</span>
+          </div>
+        `;
+      }
+      
       html += `<td class="${cellClass}" 
                   data-row-key="${row.key}" 
                   data-col-key="${col.colKeyObj.key}"
-                  data-value-index="${col.valueIndex}">${displayValue}</td>`;
+                  data-value-index="${col.valueIndex}"
+                  ${styleAttr}>${cellContent}</td>`;
     });
     
     html += '</tr>';
@@ -419,6 +442,104 @@ export class PivotRenderer {
     }
     
     return value;
+  }
+
+  computeValueStats() {
+    this.valueStats = {};
+    const { values } = this.config;
+    const allColCombos = this.buildDataColumns();
+    
+    values.forEach((_, valueIndex) => {
+      const allValues = [];
+      
+      this.allRows.forEach(row => {
+        if (row.isSubtotal || row.isGrandTotal) return;
+        
+        allColCombos.forEach(col => {
+          if (col.valueIndex !== valueIndex) return;
+          
+          const value = this.getCellValue(row, col.colKeyObj, valueIndex);
+          if (typeof value === 'number' && !isNaN(value)) {
+            allValues.push(value);
+          }
+        });
+      });
+      
+      if (allValues.length > 0) {
+        this.valueStats[valueIndex] = {
+          min: Math.min(...allValues),
+          max: Math.max(...allValues),
+          allValues
+        };
+      }
+    });
+  }
+
+  applyConditionalFormat(value, valueIndex) {
+    const styles = [];
+    const rules = this.config.conditionalFormats?.[valueIndex] || [];
+    
+    if (rules.length === 0 || typeof value !== 'number' || isNaN(value)) {
+      return { styles, dataBarWidth: 0 };
+    }
+    
+    let dataBarWidth = 0;
+    
+    rules.forEach(rule => {
+      if (rule.type === 'threshold') {
+        let match = false;
+        switch (rule.operator) {
+          case 'gt': match = value > rule.value; break;
+          case 'gte': match = value >= rule.value; break;
+          case 'lt': match = value < rule.value; break;
+          case 'lte': match = value <= rule.value; break;
+          case 'eq': match = value === rule.value; break;
+        }
+        if (match) {
+          styles.push(`background-color: ${rule.color}`);
+        }
+      } else if (rule.type === 'dataBar') {
+        const stats = this.valueStats[valueIndex];
+        if (stats && stats.max !== stats.min) {
+          const ratio = (value - stats.min) / (stats.max - stats.min);
+          dataBarWidth = Math.max(0, Math.min(1, ratio)) * 100;
+        }
+      } else if (rule.type === 'colorScale') {
+        const stats = this.valueStats[valueIndex];
+        if (stats && stats.max !== stats.min) {
+          const ratio = (value - stats.min) / (stats.max - stats.min);
+          const color = this.interpolateColor(rule.minColor, rule.maxColor, ratio);
+          styles.push(`background-color: ${color}`);
+        }
+      }
+    });
+    
+    return { styles, dataBarWidth };
+  }
+
+  hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : { r: 255, g: 255, b: 255 };
+  }
+
+  rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(x => {
+      const hex = Math.round(x).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+  }
+
+  interpolateColor(color1, color2, ratio) {
+    const c1 = this.hexToRgb(color1);
+    const c2 = this.hexToRgb(color2);
+    const r = c1.r + (c2.r - c1.r) * ratio;
+    const g = c1.g + (c2.g - c1.g) * ratio;
+    const b = c1.b + (c2.b - c1.b) * ratio;
+    return this.rgbToHex(r, g, b);
   }
 
   renderVirtualScroll(columnHeaders) {
