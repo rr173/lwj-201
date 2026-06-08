@@ -193,19 +193,20 @@ export class PivotRenderer {
   }
 
   buildColumnHeaders() {
-    const { columns, values } = this.config;
+    const { columns } = this.config;
     const result = this.aggregateResult;
     
     if (!result) return [];
     
+    const allValues = result.values;
     const headers = [];
     
     if (columns.length === 0) {
       const row = [];
-      values.forEach((v, vIdx) => {
+      allValues.forEach((v, vIdx) => {
         const colKeyObj = { key: '__total__' };
         row.push({
-          label: v.label || `${aggregationTypes[v.aggregation].label}(${v.field})`,
+          label: v.label || `${aggregationTypes[v.aggregation]?.label || ''}(${v.field})`,
           colSpan: 1,
           key: `${colKeyObj.key}__${vIdx}`,
           valueIndex: vIdx,
@@ -216,7 +217,7 @@ export class PivotRenderer {
     } else {
       const allColCombos = [];
       result.columnKeys.forEach(colKey => {
-        values.forEach((v, vIdx) => {
+        allValues.forEach((v, vIdx) => {
           allColCombos.push({
             colKey,
             valueConfig: v,
@@ -225,7 +226,7 @@ export class PivotRenderer {
         });
       });
       
-      values.forEach((v, vIdx) => {
+      allValues.forEach((v, vIdx) => {
         allColCombos.push({
           colKey: { key: '__total__', values: [], isTotal: true },
           valueConfig: v,
@@ -278,7 +279,7 @@ export class PivotRenderer {
       const lastLevel = [];
       allColCombos.forEach(combo => {
         lastLevel.push({
-          label: combo.valueConfig.label || `${aggregationTypes[combo.valueConfig.aggregation].label}(${combo.valueConfig.field})`,
+          label: combo.valueConfig.label || `${aggregationTypes[combo.valueConfig.aggregation]?.label || ''}(${combo.valueConfig.field})`,
           colSpan: 1,
           colKeyObj: combo.colKey,
           valueIndex: combo.valueIndex,
@@ -408,6 +409,7 @@ export class PivotRenderer {
         const displayValue = this.formatValue(value, col.field);
         
         let cellClass = 'data-cell';
+        if (value === 'ERR') cellClass += ' cell-err';
         if (row.isGrandTotal) cellClass += ' grand-total';
         else if (row.isSubtotal) cellClass += ' subtotal';
         
@@ -493,8 +495,15 @@ export class PivotRenderer {
     const result = this.aggregateResult;
     const combos = [];
     
+    const allValues = result ? result.values : values.map((v, vIdx) => ({
+      field: v.field,
+      aggregation: v.aggregation,
+      label: v.label || `${aggregationTypes[v.aggregation].label}(${v.field})`,
+      isCalculated: false
+    }));
+
     if (columns.length === 0) {
-      values.forEach((v, vIdx) => {
+      allValues.forEach((v, vIdx) => {
         combos.push({
           colKeyObj: { key: '__total__' },
           valueIndex: vIdx,
@@ -503,7 +512,7 @@ export class PivotRenderer {
       });
     } else {
       result.columnKeys.forEach(colKey => {
-        values.forEach((v, vIdx) => {
+        allValues.forEach((v, vIdx) => {
           combos.push({
             colKeyObj: colKey,
             valueIndex: vIdx,
@@ -512,7 +521,7 @@ export class PivotRenderer {
         });
       });
       
-      values.forEach((v, vIdx) => {
+      allValues.forEach((v, vIdx) => {
         combos.push({
           colKeyObj: { key: '__total__', isTotal: true },
           valueIndex: vIdx,
@@ -561,7 +570,9 @@ export class PivotRenderer {
   }
 
   formatValue(value, field) {
-    if (value === '' || value === null || value === undefined || value === NaN) return '-';
+    if (value === 'ERR') return 'ERR';
+    if (value === '' || value === null || value === undefined) return '-';
+    if (typeof value === 'number' && isNaN(value)) return '-';
     
     if (field === '利润率') {
       return (value * 100).toFixed(2) + '%';
@@ -579,10 +590,10 @@ export class PivotRenderer {
 
   computeValueStats() {
     this.valueStats = {};
-    const { values } = this.config;
     const allColCombos = this.buildDataColumns();
+    const totalValueCount = this.aggregateResult ? this.aggregateResult.values.length : 0;
     
-    values.forEach((_, valueIndex) => {
+    for (let valueIndex = 0; valueIndex < totalValueCount; valueIndex++) {
       const allValues = [];
       const byColValues = {};
       
@@ -625,7 +636,7 @@ export class PivotRenderer {
           byColumn: byColStats
         };
       }
-    });
+    }
   }
 
   applyConditionalFormat(value, valueIndex, colKey) {
@@ -1010,7 +1021,7 @@ export class PivotRenderer {
     if (!this.selectedHeader || !this.aggregateResult) return null;
 
     const allColCombos = this.buildDataColumns();
-    const { values } = this.config;
+    const allValues = this.aggregateResult.values;
 
     if (this.selectedHeader.type === 'row') {
       const rowKey = this.selectedHeader.key;
@@ -1034,13 +1045,14 @@ export class PivotRenderer {
         labels.push({ key: '__total__', label: '总计' });
       }
 
-      const series = values.map((v, vIdx) => {
+      const series = allValues.map((v, vIdx) => {
         const vals = labels.map(l => {
           const colObj = l.key === '__total__'
             ? { key: '__total__', isTotal: true, values: [] }
             : allColCombos.find(c => c.colKeyObj.key === l.key && c.valueIndex === vIdx)?.colKeyObj;
           if (!colObj) return 0;
-          return this.getCellValue(rowObj, colObj, vIdx) || 0;
+          const val = this.getCellValue(rowObj, colObj, vIdx);
+          return (typeof val === 'number' && !isNaN(val)) ? val : 0;
         });
         return { name: v.label, values: vals };
       });
@@ -1058,9 +1070,10 @@ export class PivotRenderer {
       const dataRows = this.allRows.filter(r => !r.isSubtotal && !r.isGrandTotal);
       const labels = dataRows.map(r => r.label);
 
-      const series = values.map((v, vIdx) => {
+      const series = allValues.map((v, vIdx) => {
         const vals = dataRows.map(r => {
-          return this.getCellValue(r, colKeyObj, vIdx) || 0;
+          const val = this.getCellValue(r, colKeyObj, vIdx);
+          return (typeof val === 'number' && !isNaN(val)) ? val : 0;
         });
         return { name: v.label, values: vals };
       });

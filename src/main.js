@@ -3,6 +3,7 @@ import { PivotRenderer } from './renderer.js';
 import { aggregationTypes, getDistinctValues, getDetailRecords } from './aggregator.js';
 import { ChartEngine } from './chart-engine.js';
 import { SnapshotEngine } from './snapshot-engine.js';
+import { validateFormula, getFormulaFieldRefs, evaluateFormula } from './formula-engine.js';
 
 class PivotApp {
   constructor() {
@@ -16,7 +17,8 @@ class PivotApp {
         { field: '数量', aggregation: 'sum', label: '求和(数量)' }
       ],
       filters: [],
-      conditionalFormats: {}
+      conditionalFormats: {},
+      calculatedFields: []
     };
     
     this.renderer = null;
@@ -244,6 +246,46 @@ class PivotApp {
       
       zone.appendChild(el);
     });
+
+    const calcFields = this.config.calculatedFields || [];
+    calcFields.forEach((cf, cfIndex) => {
+      const valueIndex = this.config.values.length + cfIndex;
+      const el = this.createZoneField(cf.name, 'values calc-field', {
+        field: '__calc__' + cfIndex,
+        sourceZone: 'calcValues',
+        index: cfIndex,
+        valueIndex,
+        calcField: cf
+      });
+
+      el.querySelector('span').textContent = cf.name;
+
+      el.addEventListener('click', (e) => {
+        if (this.configLocked) return;
+        if (e.target.classList.contains('cf-btn')) {
+          e.stopPropagation();
+          this.showConditionalFormatModal(valueIndex);
+        } else if (e.target.classList.contains('edit-cf-btn')) {
+          e.stopPropagation();
+          this.showCalcFieldEditor(cfIndex);
+        } else if (!e.target.classList.contains('remove-btn')) {
+          this.showCalcFieldEditor(cfIndex);
+        }
+      });
+
+      zone.appendChild(el);
+    });
+
+    if (!this.configLocked && calcFields.length < 5) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'add-calc-field-btn';
+      addBtn.textContent = '+ 计算字段';
+      addBtn.addEventListener('click', () => {
+        if (this.configLocked) return;
+        this.showCalcFieldEditor(-1);
+      });
+      zone.appendChild(addBtn);
+    }
   }
   
   renderFiltersZone() {
@@ -277,10 +319,13 @@ class PivotApp {
     const hasCF = zoneType === 'values' && this.config.conditionalFormats[data.index] && 
       this.config.conditionalFormats[data.index].length > 0;
     const cfBtnClass = hasCF ? 'cf-btn has-cf' : 'cf-btn';
-    const cfBtn = zoneType === 'values' ? `<button class="${cfBtnClass}" title="条件格式">🎨</button>` : '';
+    const isCalcField = zoneType.includes('calc-field');
+    const cfBtn = (zoneType === 'values' || isCalcField) ? `<button class="${cfBtnClass}" title="条件格式">🎨</button>` : '';
+    const editBtn = isCalcField ? '<button class="edit-cf-btn" title="编辑公式">✏️</button>' : '';
     
     el.innerHTML = `
       <span>${label}</span>
+      ${editBtn}
       ${cfBtn}
       <button class="remove-btn" title="移除">&times;</button>
     `;
@@ -316,6 +361,10 @@ class PivotApp {
     if (sourceZone === 'values') {
       this.config.values.splice(index, 1);
       this.rebuildConditionalFormats(index);
+    } else if (sourceZone === 'calcValues') {
+      const cf = this.config.calculatedFields;
+      cf.splice(index, 1);
+      this.rebuildConditionalFormatsForCalcFields(index);
     } else if (sourceZone === 'filter') {
       this.config.filters.splice(index, 1);
     } else {
@@ -341,6 +390,189 @@ class PivotApp {
     });
     
     this.config.conditionalFormats = newCF;
+  }
+
+  rebuildConditionalFormatsForCalcFields(removedCalcIndex) {
+    const newCF = {};
+    const oldCF = this.config.conditionalFormats;
+    const baseIndex = this.config.values.length;
+    
+    Object.keys(oldCF).forEach(oldIdxStr => {
+      const oldIdx = parseInt(oldIdxStr);
+      if (oldIdx < baseIndex + removedCalcIndex) {
+        newCF[oldIdx] = oldCF[oldIdx];
+      } else if (oldIdx > baseIndex + removedCalcIndex) {
+        newCF[oldIdx - 1] = oldCF[oldIdx];
+      }
+    });
+    
+    this.config.conditionalFormats = newCF;
+  }
+
+  getValidFieldNamesForCalcField() {
+    return this.config.values.map(v => v.field);
+  }
+
+  showCalcFieldEditor(editIndex) {
+    const isEdit = editIndex >= 0;
+    const existingCalc = isEdit ? this.config.calculatedFields[editIndex] : null;
+    const calcName = existingCalc ? existingCalc.name : '';
+    const calcFormula = existingCalc ? existingCalc.formula : '';
+    const validFields = this.getValidFieldNamesForCalcField();
+
+    const fieldListHtml = validFields.map(f => {
+      const field = this.fields.find(fd => fd.key === f);
+      const label = field ? field.label : f;
+      return `<div class="calc-field-item" data-field="${f}">[${label}]</div>`;
+    }).join('');
+
+    const funcListHtml = ['ABS()', 'ROUND()', 'MAX()', 'MIN()', 'IF(,,)'].map(f => {
+      return `<div class="calc-func-item" data-func="${f}">${f}</div>`;
+    }).join('');
+
+    const html = `
+      <div class="calc-editor">
+        <div class="calc-form-row">
+          <label>字段名称:</label>
+          <input type="text" id="calcFieldName" value="${calcName}" placeholder="输入计算字段名称" maxlength="20">
+        </div>
+        <div class="calc-form-row">
+          <label>公式:</label>
+          <div class="calc-formula-wrapper">
+            <textarea id="calcFormula" placeholder="例如: [销售额]/[数量]" rows="3">${calcFormula}</textarea>
+            <div id="calcFormulaError" class="calc-formula-error"></div>
+          </div>
+        </div>
+        <div class="calc-hint">语法: 四则运算 + - * /, 括号, 字段引用 [字段名], 数字常量, 函数 ABS() ROUND() MAX() MIN() IF(条件,真值,假值)</div>
+        <div class="calc-available-section">
+          <div class="calc-available-title">可用字段 (点击插入)</div>
+          <div class="calc-available-list">${fieldListHtml}</div>
+        </div>
+        <div class="calc-available-section">
+          <div class="calc-available-title">内置函数 (点击插入)</div>
+          <div class="calc-available-list">${funcListHtml}</div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" id="saveCalcField">确定</button>
+          <button class="btn btn-default" id="cancelCalcField">取消</button>
+        </div>
+      </div>
+    `;
+
+    this.showModal(isEdit ? `编辑计算字段 - ${calcName}` : '新建计算字段', html);
+
+    const nameInput = document.getElementById('calcFieldName');
+    const formulaInput = document.getElementById('calcFormula');
+    const errorDiv = document.getElementById('calcFormulaError');
+    const saveBtn = document.getElementById('saveCalcField');
+
+    const validateAndShowError = () => {
+      const formula = formulaInput.value;
+      if (!formula.trim()) {
+        errorDiv.textContent = '';
+        return false;
+      }
+      const result = validateFormula(formula, validFields);
+      if (!result.valid) {
+        errorDiv.innerHTML = result.errors.map(e => `❌ ${e.message}`).join('<br>');
+        return false;
+      }
+      errorDiv.textContent = '✓ 公式语法正确';
+      errorDiv.classList.add('valid');
+      return true;
+    };
+
+    formulaInput.addEventListener('input', () => {
+      errorDiv.classList.remove('valid');
+      validateAndShowError();
+    });
+
+    document.querySelectorAll('.calc-field-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const fieldKey = item.dataset.field;
+        const field = this.fields.find(f => f.key === fieldKey);
+        const label = field ? field.label : fieldKey;
+        const insertText = `[${label}]`;
+        const start = formulaInput.selectionStart;
+        const end = formulaInput.selectionEnd;
+        const val = formulaInput.value;
+        formulaInput.value = val.substring(0, start) + insertText + val.substring(end);
+        formulaInput.selectionStart = formulaInput.selectionEnd = start + insertText.length;
+        formulaInput.focus();
+        errorDiv.classList.remove('valid');
+        validateAndShowError();
+      });
+    });
+
+    document.querySelectorAll('.calc-func-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const funcText = item.dataset.func;
+        const insertText = funcText.replace('()', '()').replace('(,,)', '(,,)');
+        const start = formulaInput.selectionStart;
+        const end = formulaInput.selectionEnd;
+        const val = formulaInput.value;
+        formulaInput.value = val.substring(0, start) + insertText + val.substring(end);
+        const cursorPos = funcText.includes(',)')
+          ? start + funcText.indexOf('(') + 1
+          : start + funcText.indexOf('(') + 1;
+        formulaInput.selectionStart = formulaInput.selectionEnd = cursorPos;
+        formulaInput.focus();
+        errorDiv.classList.remove('valid');
+        validateAndShowError();
+      });
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      const formula = formulaInput.value.trim();
+
+      if (!name) {
+        alert('请输入字段名称');
+        return;
+      }
+
+      if (!formula) {
+        alert('请输入公式');
+        return;
+      }
+
+      const existingNames = this.config.calculatedFields
+        .map(cf => cf.name)
+        .filter((_, idx) => idx !== editIndex);
+      if (existingNames.includes(name)) {
+        alert('已存在同名计算字段，请使用不同的名称');
+        return;
+      }
+
+      const result = validateFormula(formula, validFields);
+      if (!result.valid) {
+        alert('公式不合法，请修正后再保存');
+        return;
+      }
+
+      if (!isEdit && this.config.calculatedFields.length >= 5) {
+        alert('最多只能创建5个计算字段');
+        return;
+      }
+
+      if (isEdit) {
+        this.config.calculatedFields[editIndex] = { name, formula };
+      } else {
+        this.config.calculatedFields.push({ name, formula });
+      }
+
+      this.renderZones();
+      this.renderPivot();
+      this.hideModal();
+    });
+
+    document.getElementById('cancelCalcField').addEventListener('click', () => {
+      this.hideModal();
+    });
+
+    if (calcFormula) {
+      validateAndShowError();
+    }
   }
   
   renderPivot() {
@@ -412,8 +644,19 @@ class PivotApp {
   }
   
   showConditionalFormatModal(valueIndex) {
-    const valueConfig = this.config.values[valueIndex];
-    const field = this.fields.find(f => f.key === valueConfig.field);
+    const baseCount = this.config.values.length;
+    const isCalcField = valueIndex >= baseCount;
+    let valueConfig, fieldLabel;
+    
+    if (isCalcField) {
+      const calcIdx = valueIndex - baseCount;
+      const calcField = this.config.calculatedFields[calcIdx];
+      valueConfig = { field: '__calc__' + calcIdx, label: calcField.name };
+      fieldLabel = { label: calcField.name };
+    } else {
+      valueConfig = this.config.values[valueIndex];
+      fieldLabel = this.fields.find(f => f.key === valueConfig.field);
+    }
     const rules = this.config.conditionalFormats[valueIndex] || [];
     
     let html = `
@@ -443,7 +686,7 @@ class PivotApp {
       </div>
     `;
     
-    this.showModal(`条件格式 - ${field.label}`, html);
+    this.showModal(`条件格式 - ${fieldLabel.label}`, html);
     
     const renderThresholdPanel = () => {
       const thresholdRules = rules.filter(r => r.type === 'threshold');

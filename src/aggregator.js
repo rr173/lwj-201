@@ -1,3 +1,5 @@
+import { evaluateFormula } from './formula-engine.js';
+
 export const aggregationTypes = {
   sum: { label: '求和', fn: (values) => values.reduce((a, b) => a + b, 0) },
   count: { label: '计数', fn: (values) => values.length },
@@ -47,7 +49,7 @@ function generateKeys(data, dimensions) {
 }
 
 export function aggregateData(data, config) {
-  const { rows, columns, values, filters } = config;
+  const { rows, columns, values, filters, calculatedFields } = config;
   
   const filteredData = applyFilters(data, filters);
   
@@ -67,7 +69,18 @@ export function aggregateData(data, config) {
     result.values.push({
       field: valueConfig.field,
       aggregation: valueConfig.aggregation,
-      label: valueConfig.label || `${aggregationTypes[valueConfig.aggregation].label}(${valueConfig.field})`
+      label: valueConfig.label || `${aggregationTypes[valueConfig.aggregation].label}(${valueConfig.field})`,
+      isCalculated: false
+    });
+  });
+
+  (calculatedFields || []).forEach((cf, cfIndex) => {
+    result.values.push({
+      field: '__calc__' + cfIndex,
+      aggregation: 'calculated',
+      label: cf.name,
+      isCalculated: true,
+      formula: cf.formula
     });
   });
   
@@ -81,6 +94,10 @@ export function getCellValue(result, rowValues, colValues, valueIndex) {
   if (!values[valueIndex]) return null;
   
   const valueConfig = values[valueIndex];
+
+  if (valueConfig.isCalculated) {
+    return getCalculatedCellValue(result, rowValues, colValues, valueIndex);
+  }
   
   const filtered = rawData.filter(record => {
     const rowMatch = !rowValues || rowValues.length === 0 || rows.every((dim, i) => {
@@ -98,6 +115,30 @@ export function getCellValue(result, rowValues, colValues, valueIndex) {
   
   const fieldValues = filtered.map(d => d[valueConfig.field]);
   return aggregationTypes[valueConfig.aggregation].fn(fieldValues);
+}
+
+function getCalculatedCellValue(result, rowValues, colValues, calcValueIndex) {
+  const { config, values } = result;
+  const formula = values[calcValueIndex].formula;
+  
+  if (!formula) return 'ERR';
+  
+  const fieldValueGetter = (fieldName) => {
+    const baseValueCount = config.values.length;
+    for (let i = 0; i < baseValueCount; i++) {
+      if (config.values[i].field === fieldName) {
+        return getCellValue(result, rowValues, colValues, i);
+      }
+    }
+    for (let i = baseValueCount; i < values.length; i++) {
+      if (values[i].isCalculated && values[i].label === fieldName) {
+        return getCellValue(result, rowValues, colValues, i);
+      }
+    }
+    return undefined;
+  };
+
+  return evaluateFormula(formula, fieldValueGetter);
 }
 
 export function getDistinctValues(data, field) {

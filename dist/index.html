@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>多维数据透视表引擎</title>
-  <script type="module" crossorigin src="/assets/index-BYk9eYJm.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BL_fEDGJ.css">
+  <script type="module" crossorigin src="/assets/index-CZtr0QrV.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DFFLrLx5.css">
 </head>
 <body>
   <div id="app">
@@ -23,6 +23,10 @@
       </aside>
       
       <div class="workspace">
+        <div id="compareBanner" class="compare-banner" style="display:none">
+          <span class="compare-banner-text">📊 对比模式 — 维度配置已锁定</span>
+          <button id="exitCompareBannerBtn" class="btn btn-default btn-sm">退出对比</button>
+        </div>
         <div class="drop-zones">
           <div class="drop-zone" id="filterZone">
             <div class="zone-title">筛选区域</div>
@@ -64,6 +68,28 @@
       </div>
     </div>
     
+    <div id="snapshotPanel" class="snapshot-panel">
+      <div class="snapshot-panel-header">
+        <span class="snapshot-panel-title">📸 快照管理</span>
+        <button id="saveSnapshotBtn" class="btn btn-primary btn-sm">保存快照</button>
+      </div>
+      <div id="snapshotList" class="snapshot-list">
+        <div class="snapshot-empty">暂无快照</div>
+      </div>
+      <div id="snapshotCompare" class="snapshot-compare">
+        <div class="compare-title">差异对比</div>
+        <div class="compare-row">
+          <select id="compareLeft" class="compare-select"><option value="">选择快照A</option></select>
+          <span class="compare-vs">vs</span>
+          <select id="compareRight" class="compare-select"><option value="">选择快照B</option></select>
+        </div>
+        <div class="compare-actions">
+          <button id="startCompareBtn" class="btn btn-primary btn-sm" disabled>开始对比</button>
+          <button id="exitCompareBtn" class="btn btn-default btn-sm" style="display:none">退出对比</button>
+        </div>
+      </div>
+    </div>
+
     <div id="modal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
