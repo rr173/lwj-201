@@ -2,6 +2,7 @@ import { salesData, fields } from './data.js';
 import { PivotRenderer } from './renderer.js';
 import { aggregationTypes, getDistinctValues, getDetailRecords } from './aggregator.js';
 import { ChartEngine } from './chart-engine.js';
+import { SnapshotEngine } from './snapshot-engine.js';
 
 class PivotApp {
   constructor() {
@@ -20,8 +21,11 @@ class PivotApp {
     
     this.renderer = null;
     this.chartEngine = null;
+    this.snapshotEngine = new SnapshotEngine();
+    this.configLocked = false;
     this.draggedField = null;
     this.draggedZoneField = null;
+    this.snapshotCounter = 1;
     
     this.init();
   }
@@ -31,6 +35,8 @@ class PivotApp {
       document.getElementById('pivotTable'),
       this.rawData
     );
+    
+    this.renderer.snapshotEngine = this.snapshotEngine;
     
     this.chartEngine = new ChartEngine(
       document.getElementById('chartCanvasWrapper')
@@ -50,6 +56,7 @@ class PivotApp {
     this.renderZones();
     this.setupDropZones();
     this.setupModal();
+    this.initSnapshotPanel();
     this.updateRecordCount();
     this.renderPivot();
   }
@@ -72,6 +79,10 @@ class PivotApp {
       el.dataset.type = field.type;
       
       el.addEventListener('dragstart', (e) => {
+        if (this.configLocked) {
+          e.preventDefault();
+          return;
+        }
         this.draggedField = field;
         e.dataTransfer.effectAllowed = 'copy';
       });
@@ -115,6 +126,8 @@ class PivotApp {
   }
   
   handleFieldDrop(zoneType, field) {
+    if (this.configLocked) return;
+
     if (zoneType === 'values') {
       if (field.type !== 'measure') {
         alert('值区域只能放置数值字段');
@@ -156,6 +169,8 @@ class PivotApp {
   }
   
   handleZoneFieldDrop(targetZone, zoneField) {
+    if (this.configLocked) return;
+
     const { field, sourceZone, index } = zoneField;
     
     if (sourceZone === targetZone) return;
@@ -211,6 +226,7 @@ class PivotApp {
       });
       
       el.addEventListener('click', (e) => {
+        if (this.configLocked) return;
         if (e.target.classList.contains('cf-btn')) {
           e.stopPropagation();
           this.showConditionalFormatModal(index);
@@ -236,6 +252,7 @@ class PivotApp {
       });
       
       el.addEventListener('click', (e) => {
+        if (this.configLocked) return;
         if (!e.target.classList.contains('remove-btn')) {
           this.showFilterModal(index);
         }
@@ -262,6 +279,10 @@ class PivotApp {
     `;
     
     el.addEventListener('dragstart', (e) => {
+      if (this.configLocked) {
+        e.preventDefault();
+        return;
+      }
       e.stopPropagation();
       this.draggedZoneField = data;
       e.dataTransfer.effectAllowed = 'move';
@@ -281,6 +302,8 @@ class PivotApp {
   }
   
   removeZoneField(data) {
+    if (this.configLocked) return;
+
     const { sourceZone, index } = data;
     
     if (sourceZone === 'values') {
@@ -784,6 +807,192 @@ class PivotApp {
       values,
       isTotal: false
     };
+  }
+
+  initSnapshotPanel() {
+    document.getElementById('saveSnapshotBtn').addEventListener('click', () => {
+      this.saveSnapshot();
+    });
+
+    document.getElementById('startCompareBtn').addEventListener('click', () => {
+      this.startComparison();
+    });
+
+    document.getElementById('exitCompareBtn').addEventListener('click', () => {
+      this.exitComparison();
+    });
+
+    document.getElementById('exitCompareBannerBtn').addEventListener('click', () => {
+      this.exitComparison();
+    });
+
+    const leftSel = document.getElementById('compareLeft');
+    const rightSel = document.getElementById('compareRight');
+
+    const updateBtn = () => {
+      const left = leftSel.value;
+      const right = rightSel.value;
+      document.getElementById('startCompareBtn').disabled = !left || !right || left === right;
+    };
+
+    leftSel.addEventListener('change', updateBtn);
+    rightSel.addEventListener('change', updateBtn);
+  }
+
+  saveSnapshot() {
+    if (this.config.values.length === 0) {
+      alert('请先配置值区域再保存快照');
+      return;
+    }
+
+    const result = this.snapshotEngine.saveSnapshot(
+      `快照 ${this.snapshotCounter}`,
+      this.config,
+      this.renderer
+    );
+
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
+
+    this.snapshotCounter++;
+    this.renderSnapshotList();
+    this.updateCompareSelectors();
+  }
+
+  deleteSnapshot(id) {
+    this.snapshotEngine.deleteSnapshot(id);
+    this.renderSnapshotList();
+    this.updateCompareSelectors();
+
+    if (this.snapshotEngine.comparisonMode) {
+      this.exitComparison();
+    }
+  }
+
+  renameSnapshot(id) {
+    const snapshot = this.snapshotEngine.snapshots.find(s => s.id === id);
+    if (!snapshot) return;
+
+    const newName = prompt('请输入新的快照名称:', snapshot.name);
+    if (newName !== null && newName.trim()) {
+      this.snapshotEngine.renameSnapshot(id, newName.trim());
+      this.renderSnapshotList();
+      this.updateCompareSelectors();
+    }
+  }
+
+  renderSnapshotList() {
+    const list = document.getElementById('snapshotList');
+
+    if (this.snapshotEngine.snapshots.length === 0) {
+      list.innerHTML = '<div class="snapshot-empty">暂无快照</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    this.snapshotEngine.snapshots.forEach(snapshot => {
+      const item = document.createElement('div');
+      item.className = 'snapshot-item';
+      item.dataset.id = snapshot.id;
+
+      const timeStr = snapshot.createdAt.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      item.innerHTML = `
+        <div class="snapshot-info">
+          <span class="snapshot-name">${snapshot.name}</span>
+          <span class="snapshot-time">${timeStr}</span>
+        </div>
+        <div class="snapshot-actions">
+          <button class="snapshot-action-btn rename-btn" title="重命名">✏️</button>
+          <button class="snapshot-action-btn delete-btn" title="删除">🗑️</button>
+        </div>
+      `;
+
+      item.querySelector('.rename-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.renameSnapshot(snapshot.id);
+      });
+
+      item.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteSnapshot(snapshot.id);
+      });
+
+      list.appendChild(item);
+    });
+  }
+
+  updateCompareSelectors() {
+    const leftSel = document.getElementById('compareLeft');
+    const rightSel = document.getElementById('compareRight');
+    const snapshots = this.snapshotEngine.snapshots;
+
+    const leftVal = leftSel.value;
+    const rightVal = rightSel.value;
+
+    leftSel.innerHTML = '<option value="">选择快照A</option>';
+    rightSel.innerHTML = '<option value="">选择快照B</option>';
+
+    snapshots.forEach(snapshot => {
+      const opt1 = new Option(snapshot.name, snapshot.id);
+      const opt2 = new Option(snapshot.name, snapshot.id);
+      leftSel.appendChild(opt1);
+      rightSel.appendChild(opt2);
+    });
+
+    if (snapshots.find(s => s.id == leftVal)) leftSel.value = leftVal;
+    if (snapshots.find(s => s.id == rightVal)) rightSel.value = rightVal;
+
+    const left = leftSel.value;
+    const right = rightSel.value;
+    document.getElementById('startCompareBtn').disabled = !left || !right || left === right;
+  }
+
+  startComparison() {
+    const leftId = parseInt(document.getElementById('compareLeft').value);
+    const rightId = parseInt(document.getElementById('compareRight').value);
+
+    if (!leftId || !rightId || leftId === rightId) {
+      alert('请选择两个不同的快照进行对比');
+      return;
+    }
+
+    const success = this.snapshotEngine.enterComparison(leftId, rightId);
+    if (!success) {
+      alert('无法进入对比模式');
+      return;
+    }
+
+    this.configLocked = true;
+    document.querySelector('.main-container').classList.add('config-locked');
+    document.getElementById('compareBanner').style.display = 'flex';
+    document.getElementById('startCompareBtn').style.display = 'none';
+    document.getElementById('exitCompareBtn').style.display = '';
+    document.getElementById('saveSnapshotBtn').disabled = true;
+
+    const labels = this.snapshotEngine.getComparisonLabels();
+    document.querySelector('.compare-banner-text').textContent =
+      `📊 对比模式: ${labels.left} vs ${labels.right} — 维度配置已锁定`;
+
+    this.renderPivot();
+  }
+
+  exitComparison() {
+    this.snapshotEngine.exitComparison();
+    this.configLocked = false;
+    document.querySelector('.main-container').classList.remove('config-locked');
+    document.getElementById('compareBanner').style.display = 'none';
+    document.getElementById('startCompareBtn').style.display = '';
+    document.getElementById('exitCompareBtn').style.display = 'none';
+    document.getElementById('saveSnapshotBtn').disabled = false;
+
+    this.renderPivot();
   }
 }
 

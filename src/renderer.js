@@ -29,6 +29,7 @@ export class PivotRenderer {
     this.valueStats = {};
     this.sortColumnKey = null;
     this.sortDirection = null;
+    this.snapshotEngine = null;
   }
   
   updateConfig(config) {
@@ -400,40 +401,91 @@ export class PivotRenderer {
     const allColCombos = this.buildDataColumns();
     allColCombos.forEach(col => {
       const value = this.getCellValue(row, col.colKeyObj, col.valueIndex);
-      const displayValue = this.formatValue(value, col.field);
-      
-      let cellClass = 'data-cell';
-      if (row.isGrandTotal) cellClass += ' grand-total';
-      else if (row.isSubtotal) cellClass += ' subtotal';
-      
-      const colKey = col.colKeyObj.key || '__total__';
-      const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
-        ? { styles: [], dataBarWidth: 0 }
-        : this.applyConditionalFormat(value, col.valueIndex, colKey);
-      
-      const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
-      
-      let cellContent = displayValue;
-      if (dataBarWidth > 0) {
-        const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
-        const barColor = dataBarRule?.color || '#667eea';
-        cellContent = `
-          <div class="data-bar-container">
-            <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
-            <span class="data-bar-value">${displayValue}</span>
-          </div>
-        `;
+
+      if (this.snapshotEngine && this.snapshotEngine.comparisonMode) {
+        html += this.renderComparisonCell(row, col, value);
+      } else {
+        const displayValue = this.formatValue(value, col.field);
+        
+        let cellClass = 'data-cell';
+        if (row.isGrandTotal) cellClass += ' grand-total';
+        else if (row.isSubtotal) cellClass += ' subtotal';
+        
+        const colKey = col.colKeyObj.key || '__total__';
+        const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
+          ? { styles: [], dataBarWidth: 0 }
+          : this.applyConditionalFormat(value, col.valueIndex, colKey);
+        
+        const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
+        
+        let cellContent = displayValue;
+        if (dataBarWidth > 0) {
+          const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
+          const barColor = dataBarRule?.color || '#667eea';
+          cellContent = `
+            <div class="data-bar-container">
+              <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
+              <span class="data-bar-value">${displayValue}</span>
+            </div>
+          `;
+        }
+        
+        html += `<td class="${cellClass}" 
+                    data-row-key="${row.key}" 
+                    data-col-key="${col.colKeyObj.key}"
+                    data-value-index="${col.valueIndex}"
+                    ${styleAttr}>${cellContent}</td>`;
       }
-      
-      html += `<td class="${cellClass}" 
-                  data-row-key="${row.key}" 
-                  data-col-key="${col.colKeyObj.key}"
-                  data-value-index="${col.valueIndex}"
-                  ${styleAttr}>${cellContent}</td>`;
     });
     
     html += '</tr>';
     return html;
+  }
+
+  renderComparisonCell(row, col, value) {
+    const comp = this.snapshotEngine.getComparisonValues(row.key, col.colKeyObj.key, col.valueIndex);
+    const labels = this.snapshotEngine.getComparisonLabels();
+
+    let cellClass = 'data-cell comparison-cell';
+    if (row.isGrandTotal) cellClass += ' grand-total';
+    else if (row.isSubtotal) cellClass += ' subtotal';
+
+    let cellColorClass = '';
+    if (comp && comp.diff !== null) {
+      if (comp.diff > 0) cellColorClass = ' cell-up';
+      else if (comp.diff < 0) cellColorClass = ' cell-down';
+      else cellColorClass = ' cell-same';
+    }
+
+    const leftDisplay = comp && comp.leftVal !== null ? this.formatValue(comp.leftVal, col.field) : '-';
+    const rightDisplay = comp && comp.rightVal !== null ? this.formatValue(comp.rightVal, col.field) : '-';
+
+    let diffDisplay = '-';
+    let diffClass = '';
+    if (comp && comp.diff !== null) {
+      const sign = comp.diff > 0 ? '+' : '';
+      const diffFormatted = this.formatValue(comp.diff, col.field);
+      diffDisplay = sign + diffFormatted;
+      if (comp.pctDiff !== null) {
+        const pctSign = comp.pctDiff > 0 ? '+' : '';
+        diffDisplay += ` (${pctSign}${comp.pctDiff.toFixed(1)}%)`;
+      }
+      diffClass = comp.diff > 0 ? 'diff-up' : comp.diff < 0 ? 'diff-down' : 'diff-same';
+    }
+
+    const leftLabel = labels.left.length > 4 ? labels.left.substring(0, 4) + '..' : labels.left;
+    const rightLabel = labels.right.length > 4 ? labels.right.substring(0, 4) + '..' : labels.right;
+
+    return `<td class="${cellClass}${cellColorClass}"
+                data-row-key="${row.key}"
+                data-col-key="${col.colKeyObj.key}"
+                data-value-index="${col.valueIndex}">
+              <div class="comp-values">
+                <div class="comp-val"><span class="comp-label comp-label-a" title="${labels.left}">${leftLabel}</span>${leftDisplay}</div>
+                <div class="comp-val"><span class="comp-label comp-label-b" title="${labels.right}">${rightLabel}</span>${rightDisplay}</div>
+              </div>
+              <div class="comp-diff ${diffClass}">${diffDisplay}</div>
+           </td>`;
   }
 
   buildDataColumns() {
