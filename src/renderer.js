@@ -234,20 +234,27 @@ export class PivotRenderer {
       
       for (let level = 0; level < columns.length; level++) {
         const levelHeaders = [];
-        let lastKey = null;
+        let lastFullKey = null;
         let lastLabel = null;
         let spanCount = 0;
         
         allColCombos.forEach((combo, idx) => {
           const val = combo.colKey.values ? combo.colKey.values[level] : null;
-          const key = val || (combo.colKey.isTotal ? '__total__' : null);
+          const fullKey = val
+            ? combo.colKey.values.slice(0, level + 1).join('||')
+            : (combo.colKey.isTotal ? '__total__' : null);
           const label = val || (combo.colKey.isTotal ? '总计' : '');
           
-          if (key !== lastKey) {
-            if (lastKey !== null) {
-              levelHeaders.push({ label: lastLabel, colSpan: spanCount, key: lastKey });
+          if (fullKey !== lastFullKey) {
+            if (lastFullKey !== null) {
+              levelHeaders.push({
+                label: lastLabel,
+                colSpan: spanCount,
+                key: lastFullKey,
+                dimLevel: level
+              });
             }
-            lastKey = key;
+            lastFullKey = fullKey;
             lastLabel = label;
             spanCount = 1;
           } else {
@@ -255,7 +262,12 @@ export class PivotRenderer {
           }
           
           if (idx === allColCombos.length - 1) {
-            levelHeaders.push({ label: lastLabel, colSpan: spanCount, key: lastKey });
+            levelHeaders.push({
+              label: lastLabel,
+              colSpan: spanCount,
+              key: lastFullKey,
+              dimLevel: level
+            });
           }
         });
         
@@ -848,10 +860,19 @@ export class PivotRenderer {
             if (this.selectedHeader && this.selectedHeader.type === 'col' && this.selectedHeader.key === colKey) {
               this.selectedHeader = null;
             } else {
-              const matchingCol = this.findMatchingColKeyObj(colKey);
-              if (matchingCol) {
-                this.selectedHeader = { type: 'col', key: matchingCol.colKeyObj.key, colKeyObj: matchingCol.colKeyObj, valueIndex: matchingCol.valueIndex };
-              }
+              const colValues = colKey.split('||');
+              const syntheticColKeyObj = {
+                key: colKey,
+                values: colValues,
+                isTotal: false
+              };
+              this.selectedHeader = {
+                type: 'col',
+                key: colKey,
+                colKeyObj: syntheticColKeyObj,
+                isGroupSelection: true,
+                dimLevel: header.dimLevel
+              };
             }
 
             this.applySelectedHeaderStyle();
@@ -886,6 +907,7 @@ export class PivotRenderer {
         }
       });
     } else if (this.selectedHeader.type === 'col') {
+      const selKey = this.selectedHeader.key;
       const columnHeaders = this.buildColumnHeaders();
       const numRowHeaderCols = this.config.rows.length;
 
@@ -907,14 +929,25 @@ export class PivotRenderer {
           const header = headerRow[headerIdx];
           headerIdx++;
 
-          if (header && ((header.colKeyObj && header.colKeyObj.key === this.selectedHeader.key) || header.key === this.selectedHeader.key)) {
+          if (!header) return;
+
+          if (header.colKeyObj && header.colKeyObj.key === selKey) {
+            th.classList.add('header-selected');
+          } else if (header.key === selKey) {
+            th.classList.add('header-selected');
+          } else if (this.selectedHeader.isGroupSelection && header.key && header.key !== '__total__' && selKey.startsWith(header.key + '||') === false && header.key.startsWith(selKey + '||')) {
+            th.classList.add('header-selected');
+          } else if (this.selectedHeader.isGroupSelection && header.key && header.key !== '__total__' && header.key.startsWith(selKey)) {
             th.classList.add('header-selected');
           }
         });
       });
 
       this.container.querySelectorAll('.data-cell').forEach(cell => {
-        if (cell.dataset.colKey === this.selectedHeader.key) {
+        const cellColKey = cell.dataset.colKey;
+        if (cellColKey === selKey) {
+          cell.classList.add('header-selected');
+        } else if (this.selectedHeader.isGroupSelection && cellColKey && cellColKey.startsWith(selKey)) {
           cell.classList.add('header-selected');
         }
       });
@@ -980,10 +1013,16 @@ export class PivotRenderer {
         return { name: v.label, values: vals };
       });
 
+      const titleParts = colKeyObj.values || [];
+      if (this.selectedHeader.isGroupSelection && titleParts.length < this.config.columns.length) {
+        const dimNames = this.config.columns.slice(0, titleParts.length).map((c, i) => `${c}: ${titleParts[i]}`);
+        return { labels, series, title: `列: ${dimNames.join(' / ')}` };
+      }
+
       return {
         labels,
         series,
-        title: `列: ${(colKeyObj.values || []).join(' / ')}`
+        title: `列: ${titleParts.join(' / ')}`
       };
     }
 

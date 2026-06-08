@@ -360,7 +360,12 @@ class PivotApp {
       }
     } else if (sel.type === 'col') {
       const allColCombos = this.renderer.buildDataColumns();
-      const exists = allColCombos.find(c => c.colKeyObj && c.colKeyObj.key === sel.key);
+      let exists;
+      if (sel.isGroupSelection) {
+        exists = allColCombos.find(c => c.colKeyObj && c.colKeyObj.key && c.colKeyObj.key.startsWith(sel.key));
+      } else {
+        exists = allColCombos.find(c => c.colKeyObj && c.colKeyObj.key === sel.key);
+      }
       if (!exists) {
         this.renderer.selectedHeader = null;
         this.chartEngine.clear();
