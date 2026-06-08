@@ -44,8 +44,21 @@
           </div>
         </div>
         
-        <div class="pivot-container">
-          <div id="pivotTable" class="pivot-table"></div>
+        <div class="pivot-chart-wrapper">
+          <div class="pivot-container">
+            <div id="pivotTable" class="pivot-table"></div>
+          </div>
+          <div class="chart-panel" id="chartPanel">
+            <div class="chart-header">
+              <div class="chart-title" id="chartTitle">图表可视化</div>
+              <div class="chart-type-buttons">
+                <button class="chart-type-btn active" data-type="bar">柱状图</button>
+                <button class="chart-type-btn" data-type="line">折线图</button>
+                <button class="chart-type-btn" data-type="pie">饼图</button>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" id="chartCanvasWrapper"></div>
+          </div>
         </div>
       </div>
     </div>

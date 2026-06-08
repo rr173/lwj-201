@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>多维数据透视表引擎</title>
-  <script type="module" crossorigin src="/assets/index-BlE2XV0n.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-Cvc-QQEt.css">
+  <script type="module" crossorigin src="/assets/index-B05YF_XQ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BL_fEDGJ.css">
 </head>
 <body>
   <div id="app">
@@ -45,8 +45,21 @@
           </div>
         </div>
         
-        <div class="pivot-container">
-          <div id="pivotTable" class="pivot-table"></div>
+        <div class="pivot-chart-wrapper">
+          <div class="pivot-container">
+            <div id="pivotTable" class="pivot-table"></div>
+          </div>
+          <div class="chart-panel" id="chartPanel">
+            <div class="chart-header">
+              <div class="chart-title" id="chartTitle">图表可视化</div>
+              <div class="chart-type-buttons">
+                <button class="chart-type-btn active" data-type="bar">柱状图</button>
+                <button class="chart-type-btn" data-type="line">折线图</button>
+                <button class="chart-type-btn" data-type="pie">饼图</button>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" id="chartCanvasWrapper"></div>
+          </div>
         </div>
       </div>
     </div>

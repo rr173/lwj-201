@@ -20,6 +20,8 @@ export class PivotRenderer {
     this.highlightedCell = null;
     this.onCellDoubleClick = null;
     this.onRowToggle = null;
+    this.onHeaderSelect = null;
+    this.selectedHeader = null;
     this.scrollTop = 0;
     this.visibleRows = [];
     this.allRows = [];
@@ -736,11 +738,12 @@ export class PivotRenderer {
     });
     
     this.container.querySelectorAll('.sortable-header[data-sort-key]').forEach(header => {
-      header.onclick = () => {
-        const sortKey = header.dataset.sortKey;
-        this.toggleSort(sortKey);
+      header.onclick = (e) => {
+        if (e.target.classList && (e.target.classList.contains('sort-arrow') || e.target.closest('.sort-arrow'))) {
+          const sortKey = header.dataset.sortKey;
+          this.toggleSort(sortKey);
+        }
       };
-      header.style.cursor = 'pointer';
     });
     
     this.container.querySelectorAll('.data-cell').forEach(cell => {
@@ -757,6 +760,234 @@ export class PivotRenderer {
         }
       };
     });
+
+    this.attachRowHeaderClickListeners();
+    this.attachColHeaderClickListeners();
+    this.applySelectedHeaderStyle();
+  }
+
+  attachRowHeaderClickListeners() {
+    this.container.querySelectorAll('td.row-header').forEach(cell => {
+      cell.style.cursor = 'pointer';
+      cell.onclick = (e) => {
+        const target = e.target;
+        if (target.nodeType === 1 && (target.classList.contains('expand-btn') || (target.closest && target.closest('.expand-btn')))) return;
+        const row = cell.closest('tr');
+        if (!row) return;
+
+        const dataCell = row.querySelector('.data-cell');
+        if (!dataCell) return;
+
+        const rowKey = dataCell.dataset.rowKey;
+        if (!rowKey || rowKey === '__grand_total__' || rowKey.endsWith('__subtotal')) return;
+
+        if (this.selectedHeader && this.selectedHeader.type === 'row' && this.selectedHeader.key === rowKey) {
+          this.selectedHeader = null;
+        } else {
+          this.selectedHeader = { type: 'row', key: rowKey };
+        }
+
+        this.applySelectedHeaderStyle();
+        if (this.onHeaderSelect) {
+          this.onHeaderSelect(this.selectedHeader);
+        }
+      };
+    });
+  }
+
+  attachColHeaderClickListeners() {
+    const columnHeaders = this.buildColumnHeaders();
+    const numRowHeaderCols = this.config.rows.length;
+
+    this.container.querySelectorAll('thead tr').forEach((tr, rowIdx) => {
+      const headerRow = columnHeaders[rowIdx];
+      if (!headerRow) return;
+
+      let colOffset = 0;
+      const ths = tr.querySelectorAll('th');
+      let headerIdx = 0;
+
+      ths.forEach((th, idx) => {
+        const colspan = parseInt(th.getAttribute('colspan')) || 1;
+
+        if (colOffset < numRowHeaderCols) {
+          colOffset += colspan;
+          return;
+        }
+
+        const currentHeaderIdx = headerIdx;
+        headerIdx++;
+        const header = headerRow[currentHeaderIdx];
+        if (!header) return;
+
+        if (rowIdx === columnHeaders.length - 1 && header.colKeyObj) {
+          th.style.cursor = 'pointer';
+          th.addEventListener('click', (e) => {
+            if (e.target.classList && (e.target.classList.contains('sort-arrow') || e.target.closest('.sort-arrow'))) {
+              return;
+            }
+            const colKey = header.colKeyObj.key;
+            if (colKey === '__total__') return;
+
+            if (this.selectedHeader && this.selectedHeader.type === 'col' && this.selectedHeader.key === colKey) {
+              this.selectedHeader = null;
+            } else {
+              this.selectedHeader = { type: 'col', key: colKey, colKeyObj: header.colKeyObj, valueIndex: header.valueIndex };
+            }
+
+            this.applySelectedHeaderStyle();
+            if (this.onHeaderSelect) {
+              this.onHeaderSelect(this.selectedHeader);
+            }
+          });
+        } else if (header.key && header.key !== '__total__') {
+          th.style.cursor = 'pointer';
+          th.addEventListener('click', () => {
+            const colKey = header.key;
+
+            if (this.selectedHeader && this.selectedHeader.type === 'col' && this.selectedHeader.key === colKey) {
+              this.selectedHeader = null;
+            } else {
+              const matchingCol = this.findMatchingColKeyObj(colKey);
+              if (matchingCol) {
+                this.selectedHeader = { type: 'col', key: matchingCol.colKeyObj.key, colKeyObj: matchingCol.colKeyObj, valueIndex: matchingCol.valueIndex };
+              }
+            }
+
+            this.applySelectedHeaderStyle();
+            if (this.onHeaderSelect) {
+              this.onHeaderSelect(this.selectedHeader);
+            }
+          });
+        }
+      });
+    });
+  }
+
+  findMatchingColKeyObj(targetKey) {
+    const allColCombos = this.buildDataColumns();
+    return allColCombos.find(c => c.colKeyObj && c.colKeyObj.key === targetKey);
+  }
+
+  applySelectedHeaderStyle() {
+    this.container.querySelectorAll('.header-selected').forEach(el => {
+      el.classList.remove('header-selected');
+    });
+
+    if (!this.selectedHeader) return;
+
+    if (this.selectedHeader.type === 'row') {
+      this.container.querySelectorAll('td.row-header').forEach(cell => {
+        const row = cell.closest('tr');
+        if (!row) return;
+        const dataCell = row.querySelector('.data-cell');
+        if (dataCell && dataCell.dataset.rowKey === this.selectedHeader.key) {
+          cell.classList.add('header-selected');
+        }
+      });
+    } else if (this.selectedHeader.type === 'col') {
+      const columnHeaders = this.buildColumnHeaders();
+      const numRowHeaderCols = this.config.rows.length;
+
+      this.container.querySelectorAll('thead tr').forEach((tr, rowIdx) => {
+        const headerRow = columnHeaders[rowIdx];
+        if (!headerRow) return;
+
+        let colOffset = 0;
+        let headerIdx = 0;
+
+        tr.querySelectorAll('th').forEach((th) => {
+          const colspan = parseInt(th.getAttribute('colspan')) || 1;
+
+          if (colOffset < numRowHeaderCols) {
+            colOffset += colspan;
+            return;
+          }
+
+          const header = headerRow[headerIdx];
+          headerIdx++;
+
+          if (header && ((header.colKeyObj && header.colKeyObj.key === this.selectedHeader.key) || header.key === this.selectedHeader.key)) {
+            th.classList.add('header-selected');
+          }
+        });
+      });
+
+      this.container.querySelectorAll('.data-cell').forEach(cell => {
+        if (cell.dataset.colKey === this.selectedHeader.key) {
+          cell.classList.add('header-selected');
+        }
+      });
+    }
+  }
+
+  getChartData() {
+    if (!this.selectedHeader || !this.aggregateResult) return null;
+
+    const allColCombos = this.buildDataColumns();
+    const { values } = this.config;
+
+    if (this.selectedHeader.type === 'row') {
+      const rowKey = this.selectedHeader.key;
+      const rowObj = this.allRows.find(r => r.key === rowKey);
+      if (!rowObj) return null;
+
+      const labels = [];
+      const seenLabels = new Set();
+      allColCombos.forEach(col => {
+        const colKey = col.colKeyObj.key;
+        if (colKey === '__total__') return;
+        const colValues = col.colKeyObj.values || [];
+        const label = colValues.join(' / ');
+        if (!seenLabels.has(colKey)) {
+          seenLabels.add(colKey);
+          labels.push({ key: colKey, label });
+        }
+      });
+
+      if (labels.length === 0) {
+        labels.push({ key: '__total__', label: '总计' });
+      }
+
+      const series = values.map((v, vIdx) => {
+        const vals = labels.map(l => {
+          const colObj = l.key === '__total__'
+            ? { key: '__total__', isTotal: true, values: [] }
+            : allColCombos.find(c => c.colKeyObj.key === l.key && c.valueIndex === vIdx)?.colKeyObj;
+          if (!colObj) return 0;
+          return this.getCellValue(rowObj, colObj, vIdx) || 0;
+        });
+        return { name: v.label, values: vals };
+      });
+
+      return {
+        labels: labels.map(l => l.label),
+        series,
+        title: `行: ${rowObj.label}`
+      };
+
+    } else if (this.selectedHeader.type === 'col') {
+      const colKeyObj = this.selectedHeader.colKeyObj;
+      if (!colKeyObj) return null;
+
+      const dataRows = this.allRows.filter(r => !r.isSubtotal && !r.isGrandTotal);
+      const labels = dataRows.map(r => r.label);
+
+      const series = values.map((v, vIdx) => {
+        const vals = dataRows.map(r => {
+          return this.getCellValue(r, colKeyObj, vIdx) || 0;
+        });
+        return { name: v.label, values: vals };
+      });
+
+      return {
+        labels,
+        series,
+        title: `列: ${(colKeyObj.values || []).join(' / ')}`
+      };
+    }
+
+    return null;
   }
 
   highlightCell(cell) {

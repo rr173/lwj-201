@@ -1,6 +1,7 @@
 import { salesData, fields } from './data.js';
 import { PivotRenderer } from './renderer.js';
 import { aggregationTypes, getDistinctValues, getDetailRecords } from './aggregator.js';
+import { ChartEngine } from './chart-engine.js';
 
 class PivotApp {
   constructor() {
@@ -18,6 +19,7 @@ class PivotApp {
     };
     
     this.renderer = null;
+    this.chartEngine = null;
     this.draggedField = null;
     this.draggedZoneField = null;
     
@@ -30,9 +32,19 @@ class PivotApp {
       this.rawData
     );
     
+    this.chartEngine = new ChartEngine(
+      document.getElementById('chartCanvasWrapper')
+    );
+    
     this.renderer.onCellDoubleClick = (rowKey, colKey, valueIndex) => {
       this.showDetailModal(rowKey, colKey, valueIndex);
     };
+
+    this.renderer.onHeaderSelect = (selectedHeader) => {
+      this.onHeaderSelect(selectedHeader);
+    };
+
+    this.setupChartTypeButtons();
     
     this.renderFieldList();
     this.renderZones();
@@ -303,6 +315,65 @@ class PivotApp {
   
   renderPivot() {
     this.renderer.updateConfig(this.config);
+    this.refreshChartIfSelected();
+  }
+
+  setupChartTypeButtons() {
+    document.querySelectorAll('.chart-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.type;
+        document.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.chartEngine.setChartType(type);
+      });
+    });
+  }
+
+  onHeaderSelect(selectedHeader) {
+    if (!selectedHeader) {
+      this.chartEngine.clear();
+      document.getElementById('chartTitle').textContent = '图表可视化';
+      return;
+    }
+
+    const data = this.renderer.getChartData();
+    if (!data) {
+      this.chartEngine.clear();
+      return;
+    }
+
+    document.getElementById('chartTitle').textContent = data.title;
+    this.chartEngine.setData(data, this.chartEngine.chartType);
+  }
+
+  refreshChartIfSelected() {
+    const sel = this.renderer.selectedHeader;
+    if (!sel) return;
+
+    if (sel.type === 'row') {
+      const exists = this.renderer.allRows.find(r => r.key === sel.key);
+      if (!exists) {
+        this.renderer.selectedHeader = null;
+        this.chartEngine.clear();
+        document.getElementById('chartTitle').textContent = '图表可视化';
+        return;
+      }
+    } else if (sel.type === 'col') {
+      const allColCombos = this.renderer.buildDataColumns();
+      const exists = allColCombos.find(c => c.colKeyObj && c.colKeyObj.key === sel.key);
+      if (!exists) {
+        this.renderer.selectedHeader = null;
+        this.chartEngine.clear();
+        document.getElementById('chartTitle').textContent = '图表可视化';
+        return;
+      }
+    }
+
+    const data = this.renderer.getChartData();
+    if (data) {
+      document.getElementById('chartTitle').textContent = data.title;
+      this.chartEngine.setData(data, this.chartEngine.chartType);
+    }
   }
   
   showConditionalFormatModal(valueIndex) {
