@@ -102,6 +102,7 @@ class PivotApp {
       const zoneType = zone.dataset.zone;
       
       zone.parentNode.addEventListener('dragover', (e) => {
+        if (this.configLocked) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         zone.parentNode.classList.add('drag-over');
@@ -114,6 +115,12 @@ class PivotApp {
       zone.parentNode.addEventListener('drop', (e) => {
         e.preventDefault();
         zone.parentNode.classList.remove('drag-over');
+
+        if (this.configLocked) {
+          this.draggedZoneField = null;
+          this.draggedField = null;
+          return;
+        }
         
         if (this.draggedZoneField) {
           this.handleZoneFieldDrop(zoneType, this.draggedZoneField);
@@ -969,6 +976,9 @@ class PivotApp {
       return;
     }
 
+    this.savedFilters = JSON.parse(JSON.stringify(this.config.filters));
+    this.config.filters = [];
+
     this.configLocked = true;
     document.querySelector('.main-container').classList.add('config-locked');
     document.getElementById('compareBanner').style.display = 'flex';
@@ -980,18 +990,29 @@ class PivotApp {
     document.querySelector('.compare-banner-text').textContent =
       `📊 对比模式: ${labels.left} vs ${labels.right} — 维度配置已锁定`;
 
+    this.renderZones();
     this.renderPivot();
+
+    document.querySelectorAll('.zone-field').forEach(el => { el.draggable = false; });
+    document.querySelectorAll('.field-item').forEach(el => { el.draggable = false; });
   }
 
   exitComparison() {
     this.snapshotEngine.exitComparison();
     this.configLocked = false;
+
+    if (this.savedFilters) {
+      this.config.filters = this.savedFilters;
+      this.savedFilters = null;
+    }
+
     document.querySelector('.main-container').classList.remove('config-locked');
     document.getElementById('compareBanner').style.display = 'none';
     document.getElementById('startCompareBtn').style.display = '';
     document.getElementById('exitCompareBtn').style.display = 'none';
     document.getElementById('saveSnapshotBtn').disabled = false;
 
+    this.renderZones();
     this.renderPivot();
   }
 }

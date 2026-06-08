@@ -76,23 +76,23 @@ export class SnapshotEngine {
     if (!this.comparisonMode || !this.comparisonPair) return null;
 
     const key = `${rowKey}\u0000${colKey}\u0000${valueIndex}`;
-    const leftVal = this.comparisonPair.left.cellMap[key];
-    const rightVal = this.comparisonPair.right.cellMap[key];
+    const leftRaw = this.comparisonPair.left.cellMap[key];
+    const rightRaw = this.comparisonPair.right.cellMap[key];
 
-    if (leftVal === undefined && rightVal === undefined) return null;
+    if (leftRaw === undefined && rightRaw === undefined) return null;
 
-    const lv = leftVal !== undefined ? leftVal : null;
-    const rv = rightVal !== undefined ? rightVal : null;
-    let diff = null;
+    const lv = leftRaw !== undefined ? leftRaw : null;
+    const rv = rightRaw !== undefined ? rightRaw : null;
+
+    const lvForDiff = lv !== null ? lv : 0;
+    const rvForDiff = rv !== null ? rv : 0;
+
+    const diff = rvForDiff - lvForDiff;
     let pctDiff = null;
-
-    if (lv !== null && rv !== null) {
-      diff = rv - lv;
-      if (lv !== 0) {
-        pctDiff = (diff / Math.abs(lv)) * 100;
-      } else if (diff === 0) {
-        pctDiff = 0;
-      }
+    if (lvForDiff !== 0) {
+      pctDiff = (diff / Math.abs(lvForDiff)) * 100;
+    } else if (diff === 0) {
+      pctDiff = 0;
     }
 
     return { leftVal: lv, rightVal: rv, diff, pctDiff };
