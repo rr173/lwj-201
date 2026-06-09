@@ -7,6 +7,7 @@ export class DrillDownEngine {
     this.path = [];
     this.currentLevelData = null;
     this.cellContext = null;
+    this.cellFilters = [];
     this.onStateChange = null;
     this._dimensionFields = fields.filter(f => f.type === 'dimension');
   }
@@ -29,21 +30,35 @@ export class DrillDownEngine {
     this.active = true;
     this.rawData = rawData;
     this.cellContext = { rowKeyObj, colKeyObj, valueIndex, pivotConfig };
+
+    this.cellFilters = [];
+    if (rowKeyObj && !rowKeyObj.isTotal && rowKeyObj.values && rowKeyObj.values.length > 0) {
+      pivotConfig.rows.forEach((dim, i) => {
+        if (i < rowKeyObj.values.length) {
+          this.cellFilters.push({ field: dim, value: rowKeyObj.values[i] });
+        }
+      });
+    }
+    if (colKeyObj && !colKeyObj.isTotal && colKeyObj.values && colKeyObj.values.length > 0) {
+      pivotConfig.columns.forEach((dim, i) => {
+        if (i < colKeyObj.values.length) {
+          this.cellFilters.push({ field: dim, value: colKeyObj.values[i] });
+        }
+      });
+    }
+
     this.path = [];
     this._computeInitialData();
     this._notify();
   }
 
   _computeInitialData() {
-    const { rowKeyObj, colKeyObj, valueIndex, pivotConfig } = this.cellContext;
+    const { valueIndex, pivotConfig } = this.cellContext;
     const baseFiltered = this._getBaseFilteredData();
     const valueField = pivotConfig.values[valueIndex];
     if (!valueField) return;
 
-    const usedDimensions = [
-      ...(pivotConfig.rows || []),
-      ...(pivotConfig.columns || [])
-    ];
+    const usedDimensions = this._getUsedDimensions();
     const nextDim = this._getNextDimension(usedDimensions);
 
     if (!nextDim) {
@@ -61,10 +76,11 @@ export class DrillDownEngine {
   }
 
   _getBaseFilteredData() {
-    const { rowKeyObj, colKeyObj, pivotConfig } = this.cellContext;
-    const { rows, columns, filters } = pivotConfig;
+    const { pivotConfig } = this.cellContext;
+    const { filters } = pivotConfig;
 
     let data = this.rawData;
+
     if (filters && filters.length > 0) {
       data = data.filter(record => {
         return filters.every(filter => {
@@ -74,22 +90,8 @@ export class DrillDownEngine {
       });
     }
 
-    if (rowKeyObj && !rowKeyObj.isTotal && rowKeyObj.values && rowKeyObj.values.length > 0) {
-      data = data.filter(record => {
-        return rows.every((dim, i) => {
-          if (i >= rowKeyObj.values.length) return true;
-          return record[dim] === rowKeyObj.values[i];
-        });
-      });
-    }
-
-    if (colKeyObj && !colKeyObj.isTotal && colKeyObj.values && colKeyObj.values.length > 0) {
-      data = data.filter(record => {
-        return columns.every((dim, i) => {
-          if (i >= colKeyObj.values.length) return true;
-          return record[dim] === colKeyObj.values[i];
-        });
-      });
+    for (const cf of this.cellFilters) {
+      data = data.filter(record => record[cf.field] === cf.value);
     }
 
     for (const step of this.path) {
@@ -181,11 +183,12 @@ export class DrillDownEngine {
     if (levelIndex < 0) {
       this.path = [];
       this._computeInitialData();
+      this._notify();
       return;
     }
     if (levelIndex >= this.path.length) return;
 
-    this.path = this.path.slice(0, levelIndex);
+    this.path = this.path.slice(0, levelIndex + 1);
     this._recomputeCurrentLevel();
   }
 
@@ -217,6 +220,7 @@ export class DrillDownEngine {
     this.path = [];
     this.currentLevelData = null;
     this.cellContext = null;
+    this.cellFilters = [];
     this._notify();
   }
 
@@ -226,52 +230,39 @@ export class DrillDownEngine {
     this.rawData = rawData;
     this.cellContext.pivotConfig = pivotConfig;
 
-    let changed = false;
+    const usedInPivot = new Set([
+      ...(pivotConfig.rows || []),
+      ...(pivotConfig.columns || [])
+    ]);
+
     const newPath = [];
 
     for (let i = 0; i < this.path.length; i++) {
       const step = this.path[i];
-      const usedDimensions = [
-        ...(pivotConfig.rows || []),
-        ...(pivotConfig.columns || [])
-      ];
-      const pathDimsSoFar = newPath.map(s => s.dimension);
-      const allUsed = [...usedDimensions, ...pathDimsSoFar];
 
-      if (usedDimensions.includes(step.dimension)) {
-        changed = true;
+      if (usedInPivot.has(step.dimension)) {
         break;
       }
 
-      const nextDim = this._getNextDimension(allUsed);
-      if (!nextDim || nextDim.key !== step.dimension) {
-        changed = true;
-        break;
-      }
-
-      const baseFiltered = this._getBaseFilteredDataForPath(newPath, pivotConfig);
+      const baseFiltered = this._getBaseFilteredDataForPath(newPath);
       const validValues = new Set(baseFiltered.map(r => r[step.dimension]));
       if (!validValues.has(step.value)) {
-        changed = true;
         break;
       }
 
       newPath.push(step);
     }
 
-    if (changed || newPath.length !== this.path.length) {
-      this.path = newPath;
-      this._recomputeCurrentLevel();
-    } else {
-      this._recomputeCurrentLevel();
-    }
+    this.path = newPath;
+    this._recomputeCurrentLevel();
   }
 
-  _getBaseFilteredDataForPath(pathSteps, pivotConfig) {
-    const { rowKeyObj, colKeyObj } = this.cellContext;
-    const { rows, columns, filters } = pivotConfig;
+  _getBaseFilteredDataForPath(pathSteps) {
+    const { pivotConfig } = this.cellContext;
+    const { filters } = pivotConfig;
 
     let data = this.rawData;
+
     if (filters && filters.length > 0) {
       data = data.filter(record => {
         return filters.every(filter => {
@@ -281,22 +272,8 @@ export class DrillDownEngine {
       });
     }
 
-    if (rowKeyObj && !rowKeyObj.isTotal && rowKeyObj.values && rowKeyObj.values.length > 0) {
-      data = data.filter(record => {
-        return rows.every((dim, i) => {
-          if (i >= rowKeyObj.values.length) return true;
-          return record[dim] === rowKeyObj.values[i];
-        });
-      });
-    }
-
-    if (colKeyObj && !colKeyObj.isTotal && colKeyObj.values && colKeyObj.values.length > 0) {
-      data = data.filter(record => {
-        return columns.every((dim, i) => {
-          if (i >= colKeyObj.values.length) return true;
-          return record[dim] === colKeyObj.values[i];
-        });
-      });
+    for (const cf of this.cellFilters) {
+      data = data.filter(record => record[cf.field] === cf.value);
     }
 
     for (const step of pathSteps) {
