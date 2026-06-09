@@ -1295,3 +1295,287 @@ body {
   font-weight: 700;
   font-style: italic;
 }
+
+.drill-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: #667eea;
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.15s;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.pivot-table .data-cell:hover .drill-btn {
+  opacity: 0.7;
+}
+
+.drill-btn:hover {
+  opacity: 1 !important;
+  background: #e0e7ff;
+}
+
+.drill-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 450px;
+  height: 100vh;
+  background: white;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.12);
+  z-index: 500;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.drill-panel-open {
+  transform: translateX(0);
+}
+
+.drill-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 2px solid #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  flex-shrink: 0;
+}
+
+.drill-panel-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.drill-close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.drill-close-btn:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.drill-breadcrumb {
+  padding: 12px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.drill-breadcrumb-fade {
+  animation: drillBreadcrumbFade 300ms ease;
+}
+
+@keyframes drillBreadcrumbFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drill-breadcrumb-item {
+  color: #667eea;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+
+.drill-breadcrumb-item:hover {
+  background: #f0f3ff;
+}
+
+.drill-breadcrumb-item.active {
+  color: #333;
+  font-weight: 600;
+}
+
+.drill-breadcrumb-sep {
+  color: #ccc;
+  margin: 0 2px;
+}
+
+.drill-context-info {
+  padding: 8px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.drill-value-label {
+  font-size: 12px;
+  color: #888;
+  background: #f0f3ff;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.drill-dimension-label {
+  padding: 12px 20px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  flex-shrink: 0;
+}
+
+.drill-bars-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 20px 16px;
+}
+
+.drill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f9f9f9;
+  transition: background 0.15s;
+}
+
+.drill-bar-row:hover {
+  background: #f8f9ff;
+}
+
+.drill-bar-label {
+  min-width: 90px;
+  max-width: 90px;
+  font-size: 12px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.drill-bar-track {
+  flex: 1;
+  height: 22px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.drill-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  min-width: 3px;
+}
+
+.drill-bar-value {
+  min-width: 70px;
+  text-align: right;
+  font-size: 12px;
+  color: #333;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.drill-bar-pct {
+  min-width: 50px;
+  text-align: right;
+  font-size: 11px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.drill-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 2px solid #e8e8e8;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.drill-total-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+}
+
+.drill-total-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.drill-hint {
+  padding: 10px 20px;
+  font-size: 12px;
+  color: #aaa;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.drill-no-more {
+  padding: 40px 20px;
+  text-align: center;
+  color: #bbb;
+  font-size: 14px;
+}
+
+.drill-path-summary {
+  padding: 12px 20px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafbfc;
+  flex-shrink: 0;
+}
+
+.drill-path-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 6px;
+}
+
+.drill-path-step {
+  font-size: 12px;
+  color: #555;
+  padding: 2px 0;
+}
+
+.drill-path-step::before {
+  content: '▸ ';
+  color: #667eea;
+}
+
+.drill-tooltip {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.78);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  z-index: 1000;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}

@@ -4,6 +4,8 @@ import { aggregationTypes, getDistinctValues, getDetailRecords } from './aggrega
 import { ChartEngine } from './chart-engine.js';
 import { SnapshotEngine } from './snapshot-engine.js';
 import { validateFormula, getFormulaFieldRefs, evaluateFormula } from './formula-engine.js';
+import { DrillDownEngine } from './drilldown-engine.js';
+import { DrillDownPanel } from './drilldown-panel.js';
 
 class PivotApp {
   constructor() {
@@ -24,6 +26,8 @@ class PivotApp {
     this.renderer = null;
     this.chartEngine = null;
     this.snapshotEngine = new SnapshotEngine();
+    this.drillDownEngine = new DrillDownEngine();
+    this.drillDownPanel = null;
     this.configLocked = false;
     this.draggedField = null;
     this.draggedZoneField = null;
@@ -44,7 +48,12 @@ class PivotApp {
       document.getElementById('chartCanvasWrapper')
     );
     
+    this.drillDownPanel = new DrillDownPanel('drillDownPanel', this.drillDownEngine);
+    
     this.renderer.onCellDoubleClick = (rowKey, colKey, valueIndex) => {
+      if (this.drillDownEngine.active) {
+        return;
+      }
       this.showDetailModal(rowKey, colKey, valueIndex);
     };
 
@@ -578,6 +587,46 @@ class PivotApp {
   renderPivot() {
     this.renderer.updateConfig(this.config);
     this.refreshChartIfSelected();
+    this._setupDrillClickHandlers();
+    if (this.drillDownEngine.active) {
+      this.drillDownEngine.validatePath(this.rawData, this.config);
+    }
+  }
+
+  _setupDrillClickHandlers() {
+    const cells = this.renderer.container.querySelectorAll('.data-cell');
+    cells.forEach(cell => {
+      const existingDrillBtn = cell.querySelector('.drill-btn');
+      if (existingDrillBtn) existingDrillBtn.remove();
+
+      const drillBtn = document.createElement('span');
+      drillBtn.className = 'drill-btn';
+      drillBtn.title = '钻取';
+      drillBtn.innerHTML = '⊕';
+      cell.style.position = 'relative';
+      cell.appendChild(drillBtn);
+
+      drillBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const rowKey = cell.dataset.rowKey;
+        const colKey = cell.dataset.colKey;
+        const valueIndex = parseInt(cell.dataset.valueIndex);
+        this.startDrillDown(rowKey, colKey, valueIndex);
+      });
+    });
+  }
+
+  startDrillDown(rowKey, colKey, valueIndex) {
+    const rowKeyObj = this.parseKey(rowKey);
+    const colKeyObj = this.parseKey(colKey);
+
+    this.drillDownEngine.startDrill(
+      this.rawData,
+      rowKeyObj,
+      colKeyObj,
+      valueIndex,
+      { ...this.config, calculatedFields: this.config.calculatedFields || [] }
+    );
   }
 
   setupChartTypeButtons() {
