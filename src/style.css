@@ -1049,6 +1049,11 @@ body {
   opacity: 0.3;
 }
 
+.config-locked .zone-field .sparkline-btn {
+  pointer-events: none;
+  opacity: 0.3;
+}
+
 .pivot-table td.comparison-cell {
   padding: 4px 8px;
   vertical-align: middle;
@@ -1578,4 +1583,93 @@ body {
   z-index: 1000;
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.zone-field .sparkline-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  border: 1px solid #d9d9d9;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.zone-field .sparkline-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.zone-field .sparkline-btn.sparkline-active {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #52c41a;
+  opacity: 1;
+}
+
+.zone-field .sparkline-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pivot-table td.sparkline-cell {
+  padding: 0;
+  height: 40px;
+  vertical-align: middle;
+  position: relative;
+}
+
+.pivot-table td.sparkline-cell canvas.sparkline-canvas {
+  display: block;
+  width: 100%;
+  height: 40px;
+  cursor: crosshair;
+}
+
+.pivot-table th.sparkline-header {
+  background: #f0f5ff;
+  text-align: center;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.pivot-table .sparkline-cell.subtotal canvas.sparkline-canvas,
+.pivot-table .sparkline-cell.grand-total canvas.sparkline-canvas {
+  opacity: 0.75;
+}
+
+.sparkline-tooltip {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.78);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 1000;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.pivot-table td.sparkline-cell {
+  animation: sparklineFadeIn 0.3s ease;
+}
+
+@keyframes sparklineFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pivot-table .drill-btn-in-sparkline {
+  z-index: 3;
 }

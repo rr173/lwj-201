@@ -248,6 +248,11 @@ class PivotApp {
         if (e.target.classList.contains('cf-btn')) {
           e.stopPropagation();
           this.showConditionalFormatModal(index);
+        } else if (e.target.classList.contains('sparkline-btn')) {
+          e.stopPropagation();
+          this.renderer.toggleSparkline(index);
+          this.renderZones();
+          this._setupDrillClickHandlers();
         } else if (!e.target.classList.contains('remove-btn')) {
           this.showAggregationModal(index);
         }
@@ -274,6 +279,11 @@ class PivotApp {
         if (e.target.classList.contains('cf-btn')) {
           e.stopPropagation();
           this.showConditionalFormatModal(valueIndex);
+        } else if (e.target.classList.contains('sparkline-btn')) {
+          e.stopPropagation();
+          this.renderer.toggleSparkline(valueIndex);
+          this.renderZones();
+          this._setupDrillClickHandlers();
         } else if (e.target.classList.contains('edit-cf-btn')) {
           e.stopPropagation();
           this.showCalcFieldEditor(cfIndex);
@@ -331,10 +341,22 @@ class PivotApp {
     const isCalcField = zoneType.includes('calc-field');
     const cfBtn = (zoneType === 'values' || isCalcField) ? `<button class="${cfBtnClass}" title="条件格式">🎨</button>` : '';
     const editBtn = isCalcField ? '<button class="edit-cf-btn" title="编辑公式">✏️</button>' : '';
+
+    let sparklineBtn = '';
+    const isComparisonActive = this.snapshotEngine && this.snapshotEngine.comparisonMode;
+    if (zoneType === 'values' || isCalcField) {
+      const effectiveValueIndex = isCalcField ? data.valueIndex : data.index;
+      const isSparklineOn = this.renderer.isSparklineActive(effectiveValueIndex);
+      const sparklineBtnClass = isSparklineOn ? 'sparkline-btn sparkline-active' : 'sparkline-btn';
+      const disabled = isComparisonActive ? ' disabled' : '';
+      const title = isComparisonActive ? '对比模式下不可用' : '迷你图';
+      sparklineBtn = `<button class="${sparklineBtnClass}" title="${title}" data-sparkline-index="${effectiveValueIndex}"${disabled}>📈</button>`;
+    }
     
     el.innerHTML = `
       <span>${label}</span>
       ${editBtn}
+      ${sparklineBtn}
       ${cfBtn}
       <button class="remove-btn" title="移除">&times;</button>
     `;
@@ -1271,6 +1293,7 @@ class PivotApp {
     this.savedFilters = JSON.parse(JSON.stringify(this.config.filters));
     this.config.filters = [];
 
+    this.renderer.sparklineMode = null;
     this.configLocked = true;
     document.querySelector('.main-container').classList.add('config-locked');
     document.getElementById('compareBanner').style.display = 'flex';

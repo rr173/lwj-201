@@ -30,6 +30,152 @@ export class PivotRenderer {
     this.sortColumnKey = null;
     this.sortDirection = null;
     this.snapshotEngine = null;
+    this.sparklineMode = null;
+    this.sparklineTooltip = null;
+    this._createSparklineTooltip();
+  }
+
+  _createSparklineTooltip() {
+    this.sparklineTooltip = document.createElement('div');
+    this.sparklineTooltip.className = 'sparkline-tooltip';
+    this.sparklineTooltip.style.display = 'none';
+    document.body.appendChild(this.sparklineTooltip);
+  }
+
+  _showSparklineTooltip(e, html) {
+    this.sparklineTooltip.innerHTML = html;
+    this.sparklineTooltip.style.display = 'block';
+    const rect = this.sparklineTooltip.getBoundingClientRect();
+    let x = e.clientX + 12;
+    let y = e.clientY - 10;
+    if (x + rect.width > window.innerWidth) x = e.clientX - rect.width - 12;
+    if (y + rect.height > window.innerHeight) y = e.clientY - rect.height - 10;
+    this.sparklineTooltip.style.left = x + 'px';
+    this.sparklineTooltip.style.top = y + 'px';
+  }
+
+  _hideSparklineTooltip() {
+    this.sparklineTooltip.style.display = 'none';
+  }
+
+  toggleSparkline(valueIndex) {
+    if (this.snapshotEngine && this.snapshotEngine.comparisonMode) return;
+    if (this.sparklineMode === valueIndex) {
+      this.sparklineMode = null;
+    } else {
+      this.sparklineMode = valueIndex;
+    }
+    this.render();
+  }
+
+  isSparklineActive(valueIndex) {
+    return this.sparklineMode === valueIndex;
+  }
+
+  getSparklineData(row, valueIndex) {
+    const allColCombos = this.buildDataColumns();
+    const sparklineCols = allColCombos.filter(c => c.valueIndex === valueIndex && !c.colKeyObj.isTotal && c.colKeyObj.key !== '__total__');
+    
+    const points = [];
+    sparklineCols.forEach(col => {
+      const value = this.getCellValue(row, col.colKeyObj, valueIndex);
+      const colLabel = (col.colKeyObj.values || []).join(' / ');
+      points.push({
+        value: (typeof value === 'number' && !isNaN(value)) ? value : null,
+        colKey: col.colKeyObj.key,
+        colLabel
+      });
+    });
+
+    return points;
+  }
+
+  drawSparkline(canvas, points, isSubtotalOrTotal) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const validPoints = points.filter(p => p.value !== null);
+    if (validPoints.length < 2) {
+      if (validPoints.length === 1) {
+        ctx.fillStyle = '#667eea';
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+        const val = validPoints[0].value;
+        ctx.fillStyle = '#666';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.formatValue(val), w / 2, h / 2 + 14);
+      }
+      return;
+    }
+
+    const values = validPoints.map(p => p.value);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const range = maxVal - minVal;
+
+    const padX = 8;
+    const padY = 8;
+    const plotW = w - padX * 2;
+    const plotH = h - padY * 2;
+
+    const getX = (i) => padX + (i / (validPoints.length - 1)) * plotW;
+    const getY = (v) => {
+      if (range === 0) return padY + plotH / 2;
+      return padY + (1 - (v - minVal) / range) * plotH;
+    };
+
+    ctx.beginPath();
+    if (isSubtotalOrTotal) {
+      ctx.setLineDash([4, 3]);
+    }
+    ctx.strokeStyle = '#667eea';
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+
+    ctx.moveTo(getX(0), getY(values[0]));
+    for (let i = 1; i < validPoints.length; i++) {
+      ctx.lineTo(getX(i), getY(values[i]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    let minIdx = 0, maxIdx = 0;
+    for (let i = 1; i < values.length; i++) {
+      if (values[i] < values[minIdx]) minIdx = i;
+      if (values[i] > values[maxIdx]) maxIdx = i;
+    }
+
+    ctx.fillStyle = '#52c41a';
+    ctx.beginPath();
+    ctx.arc(getX(maxIdx), getY(values[maxIdx]), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#389e0d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ff4d4f';
+    ctx.beginPath();
+    ctx.arc(getX(minIdx), getY(values[minIdx]), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#cf1322';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    canvas._sparklinePoints = validPoints.map((p, i) => ({
+      x: getX(i),
+      y: getY(p.value),
+      value: p.value,
+      colLabel: p.colLabel,
+      colKey: p.colKey
+    }));
   }
   
   updateConfig(config) {
@@ -157,6 +303,24 @@ export class PivotRenderer {
             const valB = this.getSortValue(b, sortCol.colKeyObj, sortCol.valueIndex);
             return this.sortDirection === 'asc' ? valA - valB : valB - valA;
           };
+        } else if (this.sortColumnKey && this.sortColumnKey.startsWith('sparkline__')) {
+          const sparklineVIdx = parseInt(this.sortColumnKey.replace('sparkline__', ''));
+          if (!isNaN(sparklineVIdx)) {
+            sortFn = (a, b) => {
+              const getSum = (node) => {
+                const sparklineCols = allColCombos.filter(c => c.valueIndex === sparklineVIdx && !c.colKeyObj.isTotal && c.colKeyObj.key !== '__total__');
+                let sum = 0;
+                sparklineCols.forEach(col => {
+                  const v = this.getSortValue(node, col.colKeyObj, sparklineVIdx);
+                  sum += v;
+                });
+                return sum;
+              };
+              const valA = getSum(a);
+              const valB = getSum(b);
+              return this.sortDirection === 'asc' ? valA - valB : valB - valA;
+            };
+          }
         }
       }
       
@@ -205,13 +369,24 @@ export class PivotRenderer {
       const row = [];
       allValues.forEach((v, vIdx) => {
         const colKeyObj = { key: '__total__' };
-        row.push({
-          label: v.label || `${aggregationTypes[v.aggregation]?.label || ''}(${v.field})`,
-          colSpan: 1,
-          key: `${colKeyObj.key}__${vIdx}`,
-          valueIndex: vIdx,
-          colKeyObj
-        });
+        if (this.sparklineMode === vIdx) {
+          row.push({
+            label: '📈 ' + (v.label || `${aggregationTypes[v.aggregation]?.label || ''}(${v.field})`),
+            colSpan: 1,
+            key: `sparkline__${vIdx}`,
+            valueIndex: vIdx,
+            colKeyObj,
+            isSparkline: true
+          });
+        } else {
+          row.push({
+            label: v.label || `${aggregationTypes[v.aggregation]?.label || ''}(${v.field})`,
+            colSpan: 1,
+            key: `${colKeyObj.key}__${vIdx}`,
+            valueIndex: vIdx,
+            colKeyObj
+          });
+        }
       });
       headers.push(row);
     } else {
@@ -233,22 +408,48 @@ export class PivotRenderer {
           valueIndex: vIdx
         });
       });
-      
-      for (let level = 0; level < columns.length; level++) {
-        const levelHeaders = [];
-        let lastFullKey = null;
-        let lastLabel = null;
-        let spanCount = 0;
-        
-        allColCombos.forEach((combo, idx) => {
-          const val = combo.colKey.values ? combo.colKey.values[level] : null;
-          const fullKey = val
-            ? combo.colKey.values.slice(0, level + 1).join('||')
-            : (combo.colKey.isTotal ? '__total__' : null);
-          const label = val || (combo.colKey.isTotal ? '总计' : '');
-          
-          if (fullKey !== lastFullKey) {
-            if (lastFullKey !== null) {
+
+      if (this.sparklineMode !== null) {
+        const sparklineVIdx = this.sparklineMode;
+        const sparklineLabel = allValues[sparklineVIdx]?.label || '';
+        const nonTotalSparklineCount = result.columnKeys.length;
+
+        for (let level = 0; level < columns.length; level++) {
+          const levelHeaders = [];
+          let lastFullKey = null;
+          let lastLabel = null;
+          let spanCount = 0;
+          let isSparklineGroup = false;
+
+          const filteredCombos = allColCombos.filter(combo => {
+            if (combo.valueIndex === sparklineVIdx && !combo.colKey.isTotal) return false;
+            return true;
+          });
+
+          filteredCombos.forEach((combo, idx) => {
+            const val = combo.colKey.values ? combo.colKey.values[level] : null;
+            const fullKey = val
+              ? combo.colKey.values.slice(0, level + 1).join('||')
+              : (combo.colKey.isTotal ? '__total__' : null);
+            const label = val || (combo.colKey.isTotal ? '总计' : '');
+
+            if (fullKey !== lastFullKey) {
+              if (lastFullKey !== null) {
+                levelHeaders.push({
+                  label: lastLabel,
+                  colSpan: spanCount,
+                  key: lastFullKey,
+                  dimLevel: level
+                });
+              }
+              lastFullKey = fullKey;
+              lastLabel = label;
+              spanCount = 1;
+            } else {
+              spanCount++;
+            }
+
+            if (idx === filteredCombos.length - 1) {
               levelHeaders.push({
                 label: lastLabel,
                 colSpan: spanCount,
@@ -256,37 +457,117 @@ export class PivotRenderer {
                 dimLevel: level
               });
             }
-            lastFullKey = fullKey;
-            lastLabel = label;
-            spanCount = 1;
-          } else {
-            spanCount++;
-          }
-          
-          if (idx === allColCombos.length - 1) {
+          });
+
+          const insertIdx = level === 0 ? nonTotalSparklineCount : levelHeaders.findIndex(h => h.key === '__total__');
+          if (insertIdx === -1) {
             levelHeaders.push({
-              label: lastLabel,
-              colSpan: spanCount,
-              key: lastFullKey,
-              dimLevel: level
+              label: level === 0 ? '📈 ' + sparklineLabel : '',
+              colSpan: nonTotalSparklineCount,
+              key: `sparkline__${sparklineVIdx}__dim${level}`,
+              dimLevel: level,
+              isSparkline: true
+            });
+          } else {
+            levelHeaders.splice(insertIdx, 0, {
+              label: level === 0 ? '📈 ' + sparklineLabel : '',
+              colSpan: nonTotalSparklineCount,
+              key: `sparkline__${sparklineVIdx}__dim${level}`,
+              dimLevel: level,
+              isSparkline: true
             });
           }
+
+          headers.push(levelHeaders);
+        }
+
+        const lastLevel = [];
+        allColCombos.forEach(combo => {
+          if (combo.valueIndex === sparklineVIdx && !combo.colKey.isTotal) return;
+          lastLevel.push({
+            label: combo.valueConfig.label || `${aggregationTypes[combo.valueConfig.aggregation]?.label || ''}(${combo.valueConfig.field})`,
+            colSpan: 1,
+            colKeyObj: combo.colKey,
+            valueIndex: combo.valueIndex,
+            key: `${combo.colKey.key}__${combo.valueIndex}`
+          });
         });
+
+        const totalInsertIdx = lastLevel.findIndex(h => h.colKeyObj && h.colKeyObj.isTotal && h.valueIndex === sparklineVIdx);
+        if (totalInsertIdx === -1) {
+          lastLevel.push({
+            label: '📈 ' + sparklineLabel,
+            colSpan: nonTotalSparklineCount,
+            key: `sparkline__${sparklineVIdx}`,
+            valueIndex: sparklineVIdx,
+            isSparkline: true
+          });
+        } else {
+          lastLevel.splice(totalInsertIdx, 0, {
+            label: '📈 ' + sparklineLabel,
+            colSpan: nonTotalSparklineCount,
+            key: `sparkline__${sparklineVIdx}`,
+            valueIndex: sparklineVIdx,
+            isSparkline: true
+          });
+        }
+
+        headers.push(lastLevel);
+      } else {
+        for (let level = 0; level < columns.length; level++) {
+          const levelHeaders = [];
+          let lastFullKey = null;
+          let lastLabel = null;
+          let spanCount = 0;
+          
+          allColCombos.forEach((combo, idx) => {
+            const val = combo.colKey.values ? combo.colKey.values[level] : null;
+            const fullKey = val
+              ? combo.colKey.values.slice(0, level + 1).join('||')
+              : (combo.colKey.isTotal ? '__total__' : null);
+            const label = val || (combo.colKey.isTotal ? '总计' : '');
+            
+            if (fullKey !== lastFullKey) {
+              if (lastFullKey !== null) {
+                levelHeaders.push({
+                  label: lastLabel,
+                  colSpan: spanCount,
+                  key: lastFullKey,
+                  dimLevel: level
+                });
+              }
+              lastFullKey = fullKey;
+              lastLabel = label;
+              spanCount = 1;
+            } else {
+              spanCount++;
+            }
+            
+            if (idx === allColCombos.length - 1) {
+              levelHeaders.push({
+                label: lastLabel,
+                colSpan: spanCount,
+                key: lastFullKey,
+                dimLevel: level
+              });
+            }
+          });
+          
+          headers.push(levelHeaders);
+        }
         
-        headers.push(levelHeaders);
-      }
-      
-      const lastLevel = [];
-      allColCombos.forEach(combo => {
-        lastLevel.push({
-          label: combo.valueConfig.label || `${aggregationTypes[combo.valueConfig.aggregation]?.label || ''}(${combo.valueConfig.field})`,
-          colSpan: 1,
-          colKeyObj: combo.colKey,
-          valueIndex: combo.valueIndex,
-          key: `${combo.colKey.key}__${combo.valueIndex}`
+        const lastLevel = [];
+        allColCombos.forEach(combo => {
+          lastLevel.push({
+            label: combo.valueConfig.label || `${aggregationTypes[combo.valueConfig.aggregation]?.label || ''}(${combo.valueConfig.field})`,
+            colSpan: 1,
+            colKeyObj: combo.colKey,
+            valueIndex: combo.valueIndex,
+            key: `${combo.colKey.key}__${combo.valueIndex}`
+          });
         });
-      });
-      headers.push(lastLevel);
+        headers.push(lastLevel);
+      }
     }
     
     return headers;
@@ -369,6 +650,52 @@ export class PivotRenderer {
     
     this.container.innerHTML = html;
     this.attachEventListeners();
+    this._drawAllSparklines();
+  }
+
+  _drawAllSparklines() {
+    if (this.sparklineMode === null) return;
+    this.container.querySelectorAll('.sparkline-canvas').forEach(canvas => {
+      const rowKey = canvas.dataset.rowKey;
+      const valueIndex = parseInt(canvas.dataset.valueIndex);
+      const row = this.allRows.find(r => r.key === rowKey);
+      if (!row) return;
+      const isSubtotalOrTotal = row.isSubtotal || row.isGrandTotal;
+      const points = this.getSparklineData(row, valueIndex);
+      this.drawSparkline(canvas, points, isSubtotalOrTotal);
+    });
+    this._attachSparklineHover();
+  }
+
+  _attachSparklineHover() {
+    this.container.querySelectorAll('.sparkline-cell').forEach(cell => {
+      const canvas = cell.querySelector('.sparkline-canvas');
+      if (!canvas) return;
+
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const points = canvas._sparklinePoints;
+        if (!points || points.length === 0) return;
+
+        let closest = points[0];
+        let minDist = Math.abs(x - closest.x);
+        for (let i = 1; i < points.length; i++) {
+          const dist = Math.abs(x - points[i].x);
+          if (dist < minDist) {
+            minDist = dist;
+            closest = points[i];
+          }
+        }
+
+        const valLabel = this.formatValue(closest.value);
+        this._showSparklineTooltip(e, `${closest.colLabel}<br>${valLabel}`);
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        this._hideSparklineTooltip();
+      });
+    });
   }
 
   renderRow(row) {
@@ -400,45 +727,113 @@ export class PivotRenderer {
     }
     
     const allColCombos = this.buildDataColumns();
-    allColCombos.forEach(col => {
-      const value = this.getCellValue(row, col.colKeyObj, col.valueIndex);
 
-      if (this.snapshotEngine && this.snapshotEngine.comparisonMode) {
-        html += this.renderComparisonCell(row, col, value);
-      } else {
-        const displayValue = this.formatValue(value, col.field);
-        
-        let cellClass = 'data-cell';
-        if (value === 'ERR') cellClass += ' cell-err';
-        if (row.isGrandTotal) cellClass += ' grand-total';
-        else if (row.isSubtotal) cellClass += ' subtotal';
-        
-        const colKey = col.colKeyObj.key || '__total__';
-        const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
-          ? { styles: [], dataBarWidth: 0 }
-          : this.applyConditionalFormat(value, col.valueIndex, colKey);
-        
-        const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
-        
-        let cellContent = displayValue;
-        if (dataBarWidth > 0) {
-          const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
-          const barColor = dataBarRule?.color || '#667eea';
-          cellContent = `
-            <div class="data-bar-container">
-              <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
-              <span class="data-bar-value">${displayValue}</span>
-            </div>
-          `;
+    if (this.sparklineMode !== null) {
+      const sparklineVIdx = this.sparklineMode;
+      const sparklineCols = allColCombos.filter(c => c.valueIndex === sparklineVIdx && !c.colKeyObj.isTotal && c.colKeyObj.key !== '__total__');
+      const totalSparklineSpan = sparklineCols.length;
+
+      for (let vIdx = 0; vIdx < (this.aggregateResult ? this.aggregateResult.values.length : this.config.values.length); vIdx++) {
+        if (vIdx === sparklineVIdx) {
+          if (this.snapshotEngine && this.snapshotEngine.comparisonMode) {
+            sparklineCols.forEach(col => {
+              const value = this.getCellValue(row, col.colKeyObj, col.valueIndex);
+              html += this.renderComparisonCell(row, col, value);
+            });
+          } else {
+            let cellClass = 'data-cell sparkline-cell';
+            if (row.isGrandTotal) cellClass += ' grand-total';
+            else if (row.isSubtotal) cellClass += ' subtotal';
+
+            html += `<td class="${cellClass}" colspan="${totalSparklineSpan}"
+                        data-row-key="${row.key}"
+                        data-col-key="sparkline"
+                        data-value-index="${sparklineVIdx}">
+                        <canvas class="sparkline-canvas" data-row-key="${row.key}" data-value-index="${sparklineVIdx}"></canvas>
+                     </td>`;
+          }
+        } else {
+          const colsForVIdx = allColCombos.filter(c => c.valueIndex === vIdx);
+          colsForVIdx.forEach(col => {
+            const value = this.getCellValue(row, col.colKeyObj, col.valueIndex);
+            if (this.snapshotEngine && this.snapshotEngine.comparisonMode) {
+              html += this.renderComparisonCell(row, col, value);
+            } else {
+              const displayValue = this.formatValue(value, col.field);
+              let cellClass = 'data-cell';
+              if (value === 'ERR') cellClass += ' cell-err';
+              if (row.isGrandTotal) cellClass += ' grand-total';
+              else if (row.isSubtotal) cellClass += ' subtotal';
+
+              const colKey = col.colKeyObj.key || '__total__';
+              const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal
+                ? { styles: [], dataBarWidth: 0 }
+                : this.applyConditionalFormat(value, col.valueIndex, colKey);
+
+              const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
+
+              let cellContent = displayValue;
+              if (dataBarWidth > 0) {
+                const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
+                const barColor = dataBarRule?.color || '#667eea';
+                cellContent = `
+                  <div class="data-bar-container">
+                    <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
+                    <span class="data-bar-value">${displayValue}</span>
+                  </div>
+                `;
+              }
+
+              html += `<td class="${cellClass}" 
+                          data-row-key="${row.key}" 
+                          data-col-key="${col.colKeyObj.key}"
+                          data-value-index="${col.valueIndex}"
+                          ${styleAttr}>${cellContent}</td>`;
+            }
+          });
         }
-        
-        html += `<td class="${cellClass}" 
-                    data-row-key="${row.key}" 
-                    data-col-key="${col.colKeyObj.key}"
-                    data-value-index="${col.valueIndex}"
-                    ${styleAttr}>${cellContent}</td>`;
       }
-    });
+    } else {
+      allColCombos.forEach(col => {
+        const value = this.getCellValue(row, col.colKeyObj, col.valueIndex);
+
+        if (this.snapshotEngine && this.snapshotEngine.comparisonMode) {
+          html += this.renderComparisonCell(row, col, value);
+        } else {
+          const displayValue = this.formatValue(value, col.field);
+          
+          let cellClass = 'data-cell';
+          if (value === 'ERR') cellClass += ' cell-err';
+          if (row.isGrandTotal) cellClass += ' grand-total';
+          else if (row.isSubtotal) cellClass += ' subtotal';
+          
+          const colKey = col.colKeyObj.key || '__total__';
+          const { styles, dataBarWidth } = row.isSubtotal || row.isGrandTotal 
+            ? { styles: [], dataBarWidth: 0 }
+            : this.applyConditionalFormat(value, col.valueIndex, colKey);
+          
+          const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
+          
+          let cellContent = displayValue;
+          if (dataBarWidth > 0) {
+            const dataBarRule = (this.config.conditionalFormats?.[col.valueIndex] || []).find(r => r.type === 'dataBar');
+            const barColor = dataBarRule?.color || '#667eea';
+            cellContent = `
+              <div class="data-bar-container">
+                <div class="data-bar" style="width: ${dataBarWidth}%; background-color: ${barColor};"></div>
+                <span class="data-bar-value">${displayValue}</span>
+              </div>
+            `;
+          }
+          
+          html += `<td class="${cellClass}" 
+                      data-row-key="${row.key}" 
+                      data-col-key="${col.colKeyObj.key}"
+                      data-value-index="${col.valueIndex}"
+                      ${styleAttr}>${cellContent}</td>`;
+        }
+      });
+    }
     
     html += '</tr>';
     return html;
@@ -788,6 +1183,7 @@ export class PivotRenderer {
     
     this.container.innerHTML = html;
     this.attachEventListeners();
+    this._drawAllSparklines();
     
     if (!this.scrollHandlerAttached) {
       this.container.addEventListener('scroll', () => {
